@@ -93,9 +93,16 @@ def build(xlsx_path, outdir):
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     L1, L2, notes = {}, {}, []
 
-    # ---- spot (30 ccys), harmonized to USD/XXX ----
+    # ---- spot (top-30 sheet), harmonized to USD/XXX ----
     ws = wb['Top 30 FX Spot']
-    spot = load_cvts(ws)
+    hdr5 = next(ws.iter_rows(min_row=5, max_row=5, values_only=True))
+    if any(isinstance(h, str) and h.startswith('FX.SPOT') for h in hdr5):
+        spot = load_cvts(ws, header_row=5, data_row=6)     # new layout
+        myr = load_block_pairs(ws, [(31, [32])], ['USDMYR_BBG'], 6)
+    else:
+        spot = load_cvts(ws)                               # old layout
+        myr = {}
+    spot = spot[[c for c in spot.columns if c.startswith('FX.SPOT')]]
     ren = {}
     for c in spot.columns:                       # FX.SPOT.EUR.USD.CITI
         parts = c.split('.')
@@ -106,6 +113,8 @@ def build(xlsx_path, outdir):
         else:
             ren[c] = quote
     spot = spot.rename(columns=ren)
+    if myr:
+        spot = spot.join(pd.DataFrame({'MYR': myr['USDMYR_BBG']}), how='outer')
     L1['spot_usd_all30'] = wide_to_friday(spot)
     L1['spot_usd_asia9'] = L1['spot_usd_all30'][[c for c in ASIA9 if c in spot.columns]]
 
@@ -188,7 +197,8 @@ def build(xlsx_path, outdir):
     L1['current_account_usdbn'] = to_friday(ca, MONTHLY_FFILL)
 
     # ---- government yields (multi-block, mixed asc/desc) ----
-    ws = wb['FX Implied Yield']
+    ysheet = 'Govt & FX Implied Yield' if 'Govt & FX Implied Yield' in wb.sheetnames else 'FX Implied Yield'
+    ws = wb[ysheet]
     blocks = [(1, [2, 3, 4, 5, 6], 'US', ['1Y', '2Y', '3Y', '5Y', '10Y']),
               (8,  [9, 10, 11, 12],  'KRW', ['1Y', '2Y', '5Y', '10Y']),
               (14, [15, 16, 17, 18], 'THB', ['1Y', '2Y', '5Y', '10Y']),
@@ -207,6 +217,22 @@ def build(xlsx_path, outdir):
     for t in ['1Y', '2Y', '5Y', '10Y']:
         cols = [c for c in yields.columns if c.endswith('_' + t)]
         L1[f'govt_yield_{t.lower()}'] = yields[cols].rename(columns=lambda c: c[:-len(t) - 1])
+
+    # NDF/forward-implied yields 1M & 12M (new workbook layout)
+    r6 = next(ws.iter_rows(min_row=6, max_row=6, values_only=True))
+    if len(r6) > 63 and r6[63] == 'Korea 1M':
+        lab2ccy = {'Korea': 'KRW', 'Thailand': 'THB', 'India': 'INR', 'Philippines': 'PHP',
+                   'China': 'CNH', 'Indonesia': 'IDR', 'Malaysia': 'MYR', 'Singapore': 'SGD',
+                   'Taiwan': 'TWD'}
+        names = []
+        for i in range(63, 81):
+            cty, tenor = r6[i].rsplit(' ', 1)
+            names.append(f'{lab2ccy[cty]}_{tenor}')
+        imp = load_block_pairs(ws, [(62, list(range(63, 81)))], [names], 7)
+        impw = to_friday(imp, WEEKLY_FFILL)
+        for tenor in ['1M', '12M']:
+            cols = [c for c in impw.columns if c.endswith('_' + tenor)]
+            L1[f'fx_implied_yield_{tenor.lower()}'] = impw[cols].rename(columns=lambda c: c.split('_')[0])
 
     # ---- commodities (weekly block + KOEISEU monthly) ----
     ws = wb['Commodities']
@@ -229,7 +255,9 @@ def build(xlsx_path, outdir):
     # ---- optional REER sheet (present in updated workbook versions) ----
     if 'REER' in wb.sheetnames:
         try:
-            L1['reer'] = wide_to_friday(load_cvts(wb['REER']))
+            reer = load_cvts(wb['REER'])
+            reer = reer.rename(columns=lambda c: c.split('.')[-1].strip())
+            L1['reer'] = wide_to_friday(reer)
         except Exception as e:
             notes.append(f'REER sheet found but not parsed: {e}')
 
@@ -255,6 +283,9 @@ def build(xlsx_path, outdir):
     L2['equity_mom_12w'] = np.log(L1['equity']).shift(1) - np.log(L1['equity']).shift(13)
     L2['ca_yoy_usdbn'] = ca_m.sort_index().diff(12).pipe(
         lambda d: to_friday({c: d[c].dropna() for c in d.columns}, MONTHLY_FFILL))
+
+    if 'fx_implied_yield_1m' in L1:
+        L2['implied_yield_slope_12m_1m'] = (L1['fx_implied_yield_12m'] - L1['fx_implied_yield_1m'])
 
     # yield curve features vs US
     y2, y10 = L1['govt_yield_2y'], L1['govt_yield_10y']
@@ -331,7 +362,11 @@ EXCEL_SPEC = [
     ('Regime Indicators',        'L1', 'regime',
      'Dollar index, MSCI World, VIX, Deutsche Bank G10 carry index, JPMorgan EM FX volatility, US ISM PMI.', '0.00'),
     ('Real Effective Exchange Rate', 'L1', 'reer',
-     'Real effective exchange rate index by currency.', '0.00'),
+     'Real effective exchange rate index by currency (Citi, weekly).', '0.00'),
+    ('Implied Yield 1 Month',    'L1', 'fx_implied_yield_1m',
+     'NDF/forward-implied yield, one month, annualized percent. Offshore-tradable local rate.', '0.00'),
+    ('Implied Yield 12 Month',   'L1', 'fx_implied_yield_12m',
+     'NDF/forward-implied yield, twelve months, annualized percent.', '0.00'),
     # ---- model features ----
     ('Log Spot Asia 9',          'L2', 'log_spot',
      'Natural log of spot. Dependent variable of the fair-value (cointegration) layer.', '0.0000'),
@@ -361,6 +396,8 @@ EXCEL_SPEC = [
      'Local yield-curve slope (10Y minus 2Y) minus the US slope, percentage points.', '0.000'),
     ('Yield Differential 2Y vs US', 'L2', 'ydiff_2y_vs_us',
      'Local two-year government yield minus the US two-year yield, percentage points.', '0.000'),
+    ('Implied Yield Slope 12M-1M', 'L2', 'implied_yield_slope_12m_1m',
+     'Twelve-month minus one-month forward-implied yield. Offshore curve slope signal.', '0.00'),
 ]
 
 
