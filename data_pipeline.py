@@ -143,15 +143,15 @@ def build(xlsx_path, outdir):
 
     # ---- positioning (Citi PI, real money) ----
     pi = load_cvts(wb['FX Flows & Position'])
-    rm = {c.split('.')[1].replace('PI_', ''): c for c in pi.columns if c.endswith('PI_RM')}
-    zs = {c.split('.')[1].replace('PI_', ''): c for c in pi.columns if 'ZSCORE' in c}
+    rm = {c.split('.')[2].replace('PI_', ''): c for c in pi.columns if c.endswith('PI_RM')}
+    zs = {c.split('.')[2].replace('PI_', ''): c for c in pi.columns if 'ZSCORE' in c}
     L1['pi_realmoney'] = wide_to_friday(pi[list(rm.values())].rename(columns={v: k for k, v in rm.items()}))
     L1['pi_rm_flow_z'] = wide_to_friday(pi[list(zs.values())].rename(columns={v: k for k, v in zs.items()}))
 
     # ---- economic surprise ----
     esi_sheet = 'Economics Surprise' if 'Economics Surprise' in wb.sheetnames else 'Economics Surpirse'
     esi = load_cvts(wb[esi_sheet])
-    cols = {c.split('.')[4].replace('SI_', ''): c for c in esi.columns}
+    cols = {c.split('.')[5].replace('SI_', ''): c for c in esi.columns}
     L1['esi'] = wide_to_friday(esi[list(cols.values())].rename(columns={v: k for k, v in cols.items()}))
 
     # ---- CDS 5Y ----
