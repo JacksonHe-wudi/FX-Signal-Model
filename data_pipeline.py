@@ -400,6 +400,32 @@ EXCEL_SPEC = [
      'Twelve-month minus one-month forward-implied yield. Offshore curve slope signal.', '0.00'),
 ]
 
+# Factor grouping shown in the workbook: a colored empty divider tab opens each
+# group (mirrors the Sentiment / Fundamental divider tabs in the source file),
+# and every data tab inside the group carries the group's lighter tab color.
+EXCEL_GROUPS = [
+    ('MARKET DATA', '203864', '8EAADB', [
+        'Spot Rates 30 Currencies', 'Spot Rates Asia 9', 'Forward Points 1 Week',
+        'Implied Volatility 1 Month', 'Realized Volatility 1 Month', 'Regime Indicators']),
+    ('TECHNICAL', 'C55A11', 'F4B183', [
+        'Log Spot Asia 9', 'Weekly Return', 'Momentum 12 Weeks',
+        'Realized Skewness 26 Weeks', 'Equity Momentum 12 Weeks']),
+    ('FUNDAMENTAL', '2E75B6', '9DC3E6', [
+        'Implied Carry 1 Month', 'Carry to Volatility Ratio',
+        'Implied Yield 1 Month', 'Implied Yield 12 Month', 'Implied Yield Slope 12M-1M',
+        'Government Yield 2 Year', 'Government Yield 5 Year', 'Government Yield 10 Year',
+        'Yield Curve Slope', 'Slope Differential vs US', 'Yield Differential 2Y vs US',
+        'Sovereign CDS 5 Year', 'CDS Change 4 Weeks',
+        'Citi Terms of Trade', 'Terms of Trade Change 13 Wks',
+        'Commodities', 'Korean Semiconductor Prices',
+        'Current Account USD Billion', 'Current Account Yearly Change',
+        'Real Effective Exchange Rate', 'Equity Indices',
+        'Economic Surprise Index', 'Surprise Index Change 4 Weeks']),
+    ('SENTIMENT', '538135', 'A9D18E', [
+        'Risk Reversal 25 Delta 1 Month', 'Risk Reversal Z Score',
+        'Positioning Real Money', 'Positioning Flow Z Score']),
+]
+
 
 def write_pretty_excel(path, L1, L2, cov, notes):
     from openpyxl import Workbook
@@ -438,41 +464,61 @@ def write_pretty_excel(path, L1, L2, cov, notes):
     ws.cell(row=r, column=2, value='Description').font = HDR_F
     ws.cell(row=r, column=2).fill = HDR_FILL
     r += 1
-    for title, layer, key, desc, _ in EXCEL_SPEC:
-        src = L1 if layer == 'L1' else L2
-        if key in src:
-            ws.cell(row=r, column=1, value=title).font = Font(name='Arial', size=10, bold=True)
-            ws.cell(row=r, column=2, value=desc).font = DATA_F
-            r += 1
+    spec_by_title = {t: (layer, key, desc, fmt) for t, layer, key, desc, fmt in EXCEL_SPEC}
+    for gname, divider_color, _tc, titles in EXCEL_GROUPS:
+        cell = ws.cell(row=r, column=1, value=gname)
+        cell.font = Font(name='Arial', size=11, bold=True, color='FFFFFF')
+        cell.fill = PatternFill('solid', fgColor=divider_color)
+        r += 1
+        for title in titles:
+            if title not in spec_by_title:
+                continue
+            layer, key, desc, _ = spec_by_title[title]
+            if key in (L1 if layer == 'L1' else L2):
+                ws.cell(row=r, column=1, value='    ' + title).font = Font(name='Arial', size=10, bold=True)
+                ws.cell(row=r, column=2, value=desc).font = DATA_F
+                r += 1
     ws.column_dimensions['A'].width = 34
     ws.column_dimensions['B'].width = 110
 
-    # ---- data sheets ----
-    for title, layer, key, desc, numfmt in EXCEL_SPEC:
-        src = L1 if layer == 'L1' else L2
-        if key not in src:
+    # ---- data sheets, grouped with colored divider tabs ----
+    spec_by_title = {t: (layer, key, desc, fmt) for t, layer, key, desc, fmt in EXCEL_SPEC}
+    for gname, divider_color, tab_color, titles in EXCEL_GROUPS:
+        gtitles = [t for t in titles if t in spec_by_title and
+                   spec_by_title[t][1] in (L1 if spec_by_title[t][0] == 'L1' else L2)]
+        if not gtitles:
             continue
-        df = src[key].dropna(how='all')
-        ws = wb.create_sheet(title[:31])
-        ws.sheet_properties.tabColor = RAW_TAB if layer == 'L1' else FEAT_TAB
-        ws['A1'] = f'{title} - {desc}'
-        ws['A1'].font = TITLE_F
-        ws.cell(row=2, column=1, value='Date').font = HDR_F
-        ws.cell(row=2, column=1).fill = HDR_FILL
-        for j, c in enumerate(df.columns, start=2):
-            cell = ws.cell(row=2, column=j, value=str(c))
-            cell.font, cell.fill = HDR_F, HDR_FILL
-            cell.alignment = Alignment(horizontal='center')
-            ws.column_dimensions[get_column_letter(j)].width = 12
-        ws.column_dimensions['A'].width = 12
-        for i, (dt, row) in enumerate(df.iterrows(), start=3):
-            dcell = ws.cell(row=i, column=1, value=dt)
-            dcell.number_format, dcell.font, dcell.border = 'yyyy-mm-dd', DATA_F, THIN
-            for j, v in enumerate(row.values, start=2):
-                if pd.notna(v):
-                    cell = ws.cell(row=i, column=j, value=float(v))
-                    cell.number_format, cell.font, cell.border = numfmt, DATA_F, THIN
-        ws.freeze_panes = 'B3'
+        dv = wb.create_sheet(gname)
+        dv.sheet_properties.tabColor = divider_color
+        dv['A1'] = gname
+        dv['A1'].font = Font(name='Arial', size=22, bold=True, color=divider_color)
+        dv['A2'] = 'Sheets in this section: ' + ', '.join(gtitles)
+        dv['A2'].font = Font(name='Arial', size=10, italic=True, color='808080')
+        dv.column_dimensions['A'].width = 120
+        for title in gtitles:
+            layer, key, desc, numfmt = spec_by_title[title]
+            src = L1 if layer == 'L1' else L2
+            df = src[key].dropna(how='all')
+            ws = wb.create_sheet(title[:31])
+            ws.sheet_properties.tabColor = tab_color
+            ws['A1'] = f'{title} - {desc}'
+            ws['A1'].font = TITLE_F
+            ws.cell(row=2, column=1, value='Date').font = HDR_F
+            ws.cell(row=2, column=1).fill = HDR_FILL
+            for j, c in enumerate(df.columns, start=2):
+                cell = ws.cell(row=2, column=j, value=str(c))
+                cell.font, cell.fill = HDR_F, HDR_FILL
+                cell.alignment = Alignment(horizontal='center')
+                ws.column_dimensions[get_column_letter(j)].width = 12
+            ws.column_dimensions['A'].width = 12
+            for i, (dt, row) in enumerate(df.iterrows(), start=3):
+                dcell = ws.cell(row=i, column=1, value=dt)
+                dcell.number_format, dcell.font, dcell.border = 'yyyy-mm-dd', DATA_F, THIN
+                for j, v in enumerate(row.values, start=2):
+                    if pd.notna(v):
+                        cell = ws.cell(row=i, column=j, value=float(v))
+                        cell.number_format, cell.font, cell.border = numfmt, DATA_F, THIN
+            ws.freeze_panes = 'B3'
 
     # ---- coverage sheet ----
     ws = wb.create_sheet('Data Coverage')
