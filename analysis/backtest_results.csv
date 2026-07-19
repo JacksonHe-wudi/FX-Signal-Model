@@ -1,7 +1,7 @@
-strategy,ann_ret,ann_vol,sharpe,max_dd,hit,start,n_weeks,gross_sharpe
-Adaptive 3-pillar (A always-in),0.02%,5.06%,0.0,-15.19%,51%,2014-01-03,655,0.31
-Adaptive + RR overlay (A),-0.16%,5.15%,-0.03,-17.12%,51%,2014-01-03,655,0.2
-Adaptive (B conviction>0.5),0.14%,5.23%,0.03,-14.02%,50%,2014-01-03,655,0.39
-Adaptive (C cost hurdle),0.00%,0.00%,,0.00%,0%,2014-01-03,655,
-Static equal pillars (A),-1.83%,5.14%,-0.36,-32.06%,49%,2014-01-03,655,0.02
-Carry-only benchmark (A),1.52%,4.76%,0.32,-17.11%,54%,2014-01-03,655,0.41
+strategy,ann_ret,ann_vol,sharpe,max_dd,hit,start,n_weeks,gross_sharpe,breakeven_bp
+Adaptive 3-pillar (A always-in),1.82%,5.18%,0.35,-10.87%,53%,2014-01-03,655,0.4,4.2
+Adaptive + RR overlay (A),1.92%,5.16%,0.37,-9.45%,52%,2014-01-03,655,0.34,4.4
+Adaptive (B conviction>0.5),3.40%,5.39%,0.63,-10.25%,51%,2014-01-03,655,0.66,4.0
+Adaptive (C cost hurdle),0.00%,0.00%,,0.00%,0%,2014-01-03,655,,
+Static equal pillars (A),-0.14%,5.20%,-0.03,-20.62%,51%,2014-01-03,655,0.04,0.4
+Carry-only benchmark (A),2.51%,4.82%,0.52,-15.74%,38%,2014-01-03,655,0.55,20.8

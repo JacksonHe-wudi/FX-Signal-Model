@@ -40,6 +40,8 @@ START = '2014-01-01'
 HALF_SPREAD_BP = {'CNH': 2, 'SGD': 2, 'THB': 3, 'KRW': 3, 'TWD': 4,
                   'INR': 4, 'MYR': 5, 'PHP': 6, 'IDR': 8}
 VOL_TARGET = 0.05
+COST_SCALE = float(os.environ.get('COST_SCALE', '1'))   # 0 = mid execution
+ADJ_SPEED = float(os.environ.get('ADJ_SPEED', '0.3333'))
 
 
 def load(name, folder=DATA):
@@ -180,7 +182,7 @@ def main():
 
     # ---------------- portfolio engine ----------------------------------------
     atm = load('L1_vol_implied_atm_1m').reindex(dates)
-    cost = pd.Series(HALF_SPREAD_BP) / 1e4
+    cost = pd.Series(HALF_SPREAD_BP) / 1e4 * COST_SCALE
 
     def run(comp, trigger='A'):
         wgt = pd.DataFrame(0.0, index=dates, columns=ASIA9)
@@ -224,12 +226,15 @@ def main():
         exec_w = wgt.copy()
         prev = np.zeros(len(ASIA9))
         for t in dates:
-            prev = prev + (wgt.loc[t].values - prev) / 3.0
+            prev = prev + (wgt.loc[t].values - prev) * ADJ_SPEED
             exec_w.loc[t] = prev
         wgt = exec_w
         gross = (wgt * tot_next.reindex(dates)).sum(axis=1)
+        turnover = wgt.diff().abs().sum(axis=1)
         tc = (wgt.diff().abs() * cost).sum(axis=1)
         net = gross - tc
+        run.last_breakeven = (gross.mean() * 52) / (turnover.mean() * 52) * 1e4 \
+            if turnover.mean() > 0 else np.nan
         lev = (VOL_TARGET / (net.rolling(52).std() * np.sqrt(52))).clip(upper=3).shift(1)
         return net * lev.fillna(1.0), gross
 
@@ -251,12 +256,13 @@ def main():
         row = perf(scaled.loc[START:], nm)
         g = gross.loc[START:].dropna()
         row.append(round(g.mean() * 52 / (g.std() * np.sqrt(52)), 2) if g.std() > 0 else np.nan)
+        row.append(round(getattr(run, 'last_breakeven', np.nan), 1))
         results.append(row)
         curves[nm] = scaled.loc[START:]
 
     res = pd.DataFrame(results, columns=['strategy', 'ann_ret', 'ann_vol', 'sharpe',
                                          'max_dd', 'hit', 'start', 'n_weeks',
-                                         'gross_sharpe'])
+                                         'gross_sharpe', 'breakeven_bp'])
     os.makedirs(AN, exist_ok=True)
     res.to_csv(f'{AN}/backtest_results.csv', index=False)
     pd.DataFrame(curves).to_csv(f'{AN}/backtest_curves.csv')
