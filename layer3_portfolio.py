@@ -265,6 +265,9 @@ def main():
                                          'gross_sharpe', 'breakeven_bp'])
     os.makedirs(AN, exist_ok=True)
     res.to_csv(f'{AN}/backtest_results.csv', index=False)
+    comp_adapt.to_csv(f'{AN}/composite_adaptive.csv')
+    for p, s in pillar_scores.items():
+        s.reindex(dates).to_csv(f'{AN}/pillar_score_{p.lower()}.csv')
     pd.DataFrame(curves).to_csv(f'{AN}/backtest_curves.csv')
     W.to_csv(f'{AN}/pillar_weights.csv')
     print('\n=== net-of-cost backtests (5% vol target, weekly 1W-forward roll) ===')
