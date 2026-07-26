@@ -69,26 +69,36 @@ def main():
         print(f'  {bp}bp: Sharpe {r.mean()/r.std()*np.sqrt(52):+.2f}  '
               f'(avg weekly turnover {turn.mean():.2f}x)')
 
-    # ---- latest signal + roll tenor ----
+    # ---- latest signal + HYBRID tenor (exec_mix.py: core->1M, new->1W) ----
     t = wgt.index[wgt.abs().sum(axis=1) > 0][-1]
     basis = load('L2_fwdpts_basis_1w_1m')
+    # tenure = consecutive weeks each name has been in the book
+    active = wgt != 0
+    tenure = pd.Series(0, index=wgt.columns)
+    for c in wgt.columns:
+        s = active[c].loc[:t][::-1]
+        tenure[c] = s.cummin().sum() if len(s) and s.iloc[0] else 0
     rows = []
     for c in TRADED:
         w = wgt.loc[t, c] * mult.loc[t] * (lev.loc[t] if pd.notna(lev.loc[t]) else 1.0)
         z = comp.loc[t, c] if c in comp.columns else np.nan
         b = basis.loc[:t, c].dropna().iloc[-1] if c in basis.columns else np.nan
-        if w > 0:
-            act, tenor = '多 LONG', ('1W roll' if b > 0 else '锁 1M')
-        elif w < 0:
-            act, tenor = '空 SHORT', ('1W roll' if b < 0 else '锁 1M')
-        else:
+        if w == 0:
             act, tenor = '—', ''
+        else:
+            act = '多 LONG' if w > 0 else '空 SHORT'
+            if tenure[c] >= 4:
+                tenor = '1M (core)'            # stable name: monthly refresh, 1 spread
+            else:
+                fav_1w = (b > 0) if w > 0 else (b < 0)   # collect-more / pay-less side
+                tenor = '1W (new)' if (pd.isna(b) or fav_1w) else '1M (basis)'
         rows.append([c, round(z, 2) if pd.notna(z) else None, act,
                      f'{w*100:+.1f}%' if w != 0 else '',
+                     int(tenure[c]) if w != 0 else None,
                      round(b, 0) if pd.notna(b) else None, tenor,
                      'READY' if ready.get(c, False) else 'BLOCKED'])
-    tab = pd.DataFrame(rows, columns=['ccy', 'z', 'action', 'weight',
-                                      'basis_ann_pips', 'roll_tenor', 'gate'])
+    tab = pd.DataFrame(rows, columns=['ccy', 'z', 'action', 'weight', 'weeks_held',
+                                      'basis_ann_pips', 'tenor', 'gate'])
     tab.to_csv('analysis/weekly_signal_v2.csv', index=False)
 
     print(f'\n===== WEEKLY SIGNAL v2  {t.date()}  '
