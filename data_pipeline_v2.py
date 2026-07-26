@@ -131,17 +131,23 @@ def build(xlsx_path, outdir):
     # -------------------------------------------------- 1. SPOT (Top 30) ----
     ws = wb['Top 30 FX Spot']
     spot = load_cvts(ws, header_row=5, data_row=6)             # date col B
-    spot = spot[[c for c in spot.columns if isinstance(c, str) and c.startswith('FX.SPOT')]]
-    ren, seen = {}, {}
-    for c in spot.columns:                                     # FX.SPOT.EUR.USD.CITI
+    # Positional dedupe: CLP appears twice with IDENTICAL headers (cols AC & AE).
+    keep_idx, names, seen = [], [], set()
+    for i, c in enumerate(spot.columns):                       # FX.SPOT.EUR.USD.CITI
+        if not (isinstance(c, str) and c.startswith('FX.SPOT')):
+            continue
         base, quote = c.split('.')[2], c.split('.')[3]
         ccy = base if base != 'USD' else quote
-        if base != 'USD':                                      # EUR/GBP/AUD/NZD -> invert to USD/XXX
-            spot[c] = 1.0 / spot[c]
-        seen[ccy] = seen.get(ccy, 0) + 1
-        ren[c] = ccy if seen[ccy] == 1 else f'{ccy}__dup{seen[ccy]}'   # CLP appears twice
-    spot = spot.rename(columns=ren)
-    spot = spot[[c for c in spot.columns if '__dup' not in c]]         # dedupe CLP
+        if ccy in seen:                                        # drop the duplicate CLP
+            continue
+        seen.add(ccy)
+        keep_idx.append(i)
+        names.append((ccy, base != 'USD'))                     # (name, invert?)
+    spot = spot.iloc[:, keep_idx].copy()
+    spot.columns = [n for n, _ in names]
+    for n, inv in names:
+        if inv:                                                # EUR/GBP/AUD/NZD -> invert to USD/XXX
+            spot[n] = 1.0 / spot[n]
     # MYR side block: date col AG(32), value AH(33)
     myr = col_series(ws, 32, 33, 6).dropna()
     if len(myr):
@@ -543,10 +549,15 @@ KEY_INPUTS = [
 ]
 
 
-def completeness_report(L1, L2, asof=None):
-    """For a given (default latest) Friday, PRESENT/MISSING per traded ccy x input."""
+def completeness_report(L1, L2, asof=None, stale_days=70):
+    """For a given (default latest) Friday, PRESENT/MISSING per traded ccy x input.
+
+    Uses as-of alignment: an input is PRESENT if its most recent observation on or
+    before `asof` is non-missing and no older than `stale_days` (so monthly series
+    such as ca_yoy, whose grid can end a few weeks before the latest spot Friday,
+    are not falsely flagged).
+    """
     src = {'L1': L1, 'L2': L2}
-    # latest date common across the core spot table
     if asof is None:
         asof = L1['spot_usd_traded'].index.max()
     asof = pd.Timestamp(asof)
@@ -557,8 +568,11 @@ def completeness_report(L1, L2, asof=None):
         for label, layer, tbl in KEY_INPUTS:
             df = src[layer].get(tbl)
             ok = False
-            if df is not None and ccy in df.columns and asof in df.index:
-                ok = pd.notna(df.at[asof, ccy])
+            if df is not None and ccy in df.columns:
+                s = df[ccy]
+                s = s[s.index <= asof].dropna()
+                if len(s) and (asof - s.index[-1]).days <= stale_days:
+                    ok = True
             rec[label] = 'OK' if ok else 'MISS'
             if not ok:
                 missing.append(label)
