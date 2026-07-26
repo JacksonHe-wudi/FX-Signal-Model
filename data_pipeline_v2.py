@@ -152,6 +152,8 @@ def build(xlsx_path, outdir):
     myr = col_series(ws, 32, 33, 6).dropna()
     if len(myr):
         spot = spot.join(pd.DataFrame({'MYR': myr}), how='outer')
+    spot_daily = spot[[c for c in TRADED if c in spot.columns]].sort_index()
+    L1['spot_daily_traded'] = spot_daily[spot_daily.index >= START].dropna(how='all')
     spot_fri = wide_to_friday(spot)
     L1put(L1, 'spot_usd_all30', spot_fri)
     L1put(L1, 'spot_usd_asia9', spot_fri[[c for c in ASIA9 if c in spot_fri.columns]])
@@ -192,6 +194,13 @@ def build(xlsx_path, outdir):
         merged = pdf.combine_first(bdf) if len(pdf) else bdf     # primary wins
         merged = merged[[c for c in ALLCCY if c in merged.columns]]
         L1put(L1, f'fwd_pts_{tenor.lower()}', merged)
+        # DAILY forward points (Citi block only, 2019-06-30+): needed to model
+        # true point-to-point 1M settlement, which does not fall on the Friday
+        # grid. Kept unaligned (business-day index).
+        if bcols:
+            daily = bkp[bcols].rename(columns=lambda c: c.split('_')[0])
+            daily = daily[[c for c in ALLCCY if c in daily.columns]].sort_index()
+            L1[f'fwd_pts_{tenor.lower()}_daily'] = daily[daily.index >= START].dropna(how='all')
     notes.append('Forward points: Bloomberg (primary) with Citi CVTSHIST fall-back where Bloomberg '
                  'is missing. HUF/PLN primary points are EUR-cross (EURHUF/EURPLN) points; the Citi '
                  'fall-back is USD-cross. Convention noted per user instruction.')
