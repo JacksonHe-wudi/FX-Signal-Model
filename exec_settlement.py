@@ -1,5 +1,5 @@
 """
-Settlement-accurate execution comparison (daily data, 2019-07+).
+Settlement-accurate execution comparison (daily data, 2013+).
 
 Fixes the approximation in exec_mix.py, which modelled "1M" as a 4-week (28d)
 weight freeze. A real 1M forward settles POINT-TO-POINT (user's spec):
@@ -19,6 +19,9 @@ Positions are held to settlement (no early unwind), so the 1M book carries
 of locking a tenor, and it also makes the 1M book slower/larger (8.3 vs 6.7
 average positions).
 
+Full daily history (2013+) after the source moved the Bloomberg forward block
+to daily; the earlier run covered only 2019-07+.
+
 Schemes: 1W weekly roll | 1M point-to-point | hybrid (core->1M, new->1W).
 """
 import numpy as np
@@ -26,7 +29,7 @@ import pandas as pd
 
 from sleeve_a_rv import load, zsec, build_book, TRADED, VOL_TARGET
 
-START = '2019-07-01'
+START = '2013-01-04'
 
 
 def settle_1m(d):
@@ -45,9 +48,9 @@ def settle_1m(d):
 def annual_rates(sp, p1w, p1m, carry):
     """Clean annualized carry for each tenor.
 
-    The raw daily FWD_POINT_PIP series have pip-scale breaks (TWD implies
-    |carry| up to 20565%/yr on 215 days, PHP 526%, MYR 80%), so points are NOT
-    used for the LEVEL. Instead:
+    The raw daily FWD_POINT_PIP series have quoting-unit breaks (PHP switched
+    by x100 and TWD by ~x850 from 2025-09-29; MYR's implied factor drifts and
+    flips sign), so points are NOT used for the LEVEL. Instead:
         ann_1M = carry_1m_ann          (implied yield - SOFR, clean)
         ann_1W = ann_1M x (52*pts_1w)/(12*pts_1m)
     The tenor RATIO is scale-free (the pip factor cancels), and is winsorized

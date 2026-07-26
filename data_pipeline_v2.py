@@ -174,7 +174,7 @@ def build(xlsx_path, outdir):
         else:
             ccy = pair[3:]                          # EURHUF -> HUF, EURPLN -> PLN
         return f'{ccy}_{tenor}'
-    prim = auto_blocks(ws, 7, 8, 37, 93, bbg_name)
+    prim = auto_blocks(ws, 7, 8, 37, 120, bbg_name)   # block widened: CNH/TWD/THB/SGD moved right
     # backup Citi CVTSHIST block: header r4, data r5, date col B
     bkp = load_cvts(ws, header_row=4, data_row=5)
     bmap = {}
@@ -194,13 +194,17 @@ def build(xlsx_path, outdir):
         merged = pdf.combine_first(bdf) if len(pdf) else bdf     # primary wins
         merged = merged[[c for c in ALLCCY if c in merged.columns]]
         L1put(L1, f'fwd_pts_{tenor.lower()}', merged)
-        # DAILY forward points (Citi block only, 2019-06-30+): needed to model
-        # true point-to-point 1M settlement, which does not fall on the Friday
-        # grid. Kept unaligned (business-day index).
-        if bcols:
-            daily = bkp[bcols].rename(columns=lambda c: c.split('_')[0])
-            daily = daily[[c for c in ALLCCY if c in daily.columns]].sort_index()
-            L1[f'fwd_pts_{tenor.lower()}_daily'] = daily[daily.index >= START].dropna(how='all')
+        # DAILY forward points, needed to model true point-to-point 1M
+        # settlement (which does not fall on the Friday grid). Bloomberg is
+        # daily back to 2013; the Citi block (daily from 2019-06) fills gaps.
+        pdaily = pd.DataFrame(pcols).sort_index() if pcols else pd.DataFrame()
+        bdaily = (bkp[bcols].rename(columns=lambda c: c.split('_')[0])
+                  if bcols else pd.DataFrame())
+        dmerged = pdaily.combine_first(bdaily) if len(pdaily) else bdaily
+        if len(dmerged):
+            dmerged = dmerged[[c for c in ALLCCY if c in dmerged.columns]].sort_index()
+            L1[f'fwd_pts_{tenor.lower()}_daily'] = \
+                dmerged[dmerged.index >= START].dropna(how='all')
     notes.append('Forward points: Bloomberg (primary) with Citi CVTSHIST fall-back where Bloomberg '
                  'is missing. HUF/PLN primary points are EUR-cross (EURHUF/EURPLN) points; the Citi '
                  'fall-back is USD-cross. Convention noted per user instruction.')
