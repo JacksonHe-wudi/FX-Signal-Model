@@ -29,7 +29,9 @@ import pandas as pd
 DATA = 'data/clean/clean_csv'
 TRADED = ['CNH', 'IDR', 'INR', 'KRW', 'MYR', 'PHP', 'SGD', 'THB', 'TWD',
           'BRL', 'MXN', 'CLP', 'PLN', 'HUF']
-MAX_ANN = 40.0          # implied annualized rate beyond this = data scale break
+MAX_ANN = 40.0          # implied annualized rate beyond this = unusable tick
+CAL_WIN = 250           # rolling window (bd) for recalibrating the pip factor
+EXCLUDE = ('MYR',)      # points/carry disagree even in SIGN - unusable
 LOOKBACK = 20           # business days (~4 weeks) for the momentum being faded
 HOLD = 20               # holding period in business days
 Z_GATE = 1.0
@@ -40,30 +42,39 @@ def load(name):
 
 
 def build_rates():
-    """Clean annualized 1M rate per currency from daily points, scale-filtered."""
+    """Annualized 1M rate per currency, with a ROLLING pip-factor calibration.
+
+    A single full-sample pip factor is wrong when the source changes quoting
+    units: PHP switched by x100 and TWD by ~x850 from 2025-09-29, and a fixed
+    factor would discard that whole (most recent) year. A trailing-window
+    recalibration tracks the break instead. MYR is excluded outright - its
+    implied factor drifts 1554..8551 and turns NEGATIVE from 2025, i.e. points
+    and carry disagree on sign, so the series is unusable rather than rescaled.
+    """
     sp = load('L1_spot_daily_traded')
     p1m = load('L1_fwd_pts_1m_daily')
     carry = load('L1_carry_1m_ann')
     fac, ann = {}, {}
     for c in TRADED:
-        if c not in p1m.columns or c not in sp.columns:
+        if c in EXCLUDE or c not in p1m.columns or c not in sp.columns:
             continue
-        d = pd.concat([sp[c].rename('S'), p1m[c].rename('P'),
-                       carry[c].reindex(sp.index).ffill().rename('C')],
-                      axis=1, sort=True).dropna()
-        d = d[d['C'].abs() > 0.3]
-        if len(d) < 200:
+        cc = carry[c].reindex(sp.index).ffill()
+        implied = (p1m[c] / (sp[c] * cc / 1200)).where(cc.abs() > 0.5)
+        # trailing median, shifted so today's factor uses only past data
+        roll = implied.rolling(CAL_WIN, min_periods=60).median().shift(1)
+        roll = roll.where(roll.abs() > 1e-9).ffill()
+        if roll.notna().sum() < 200:
             continue
-        f = (d['P'] / (d['S'] * d['C'] / 1200)).median()
-        fac[c] = f
-        r = 12.0 * p1m[c] / (sp[c] * f) * 100.0          # % p.a.
-        ann[c] = r.where(r.abs() <= MAX_ANN)              # drop scale breaks
+        fac[c] = roll
+        r = 12.0 * p1m[c] / (sp[c] * roll) * 100.0        # % p.a.
+        ann[c] = r.where(r.abs() <= MAX_ANN)              # residual bad ticks
     return pd.DataFrame(ann).dropna(how='all'), fac
 
 
 def main():
     ann, fac = build_rates()
-    print('pip factors:', {k: round(v) for k, v in fac.items()})
+    print('pip factor (rolling, latest):', {k: round(v.dropna().iloc[-1])
+                                             for k, v in fac.items()})
     dropped = {c: int((ann[c].isna() & load('L1_fwd_pts_1m_daily')[c]
                        .reindex(ann.index).notna()).sum()) for c in ann.columns}
     print('days dropped as scale breaks:', {k: v for k, v in dropped.items() if v})
@@ -112,9 +123,9 @@ def main():
                             len(common)])
         return pd.DataFrame(out, columns=['d', 'ret_bp', 'n']).set_index('d')
 
-    CLEAN = [c for c in ann.columns if c not in ('MYR', 'PHP', 'TWD')]
-    for label, names in [('ALL 14', list(ann.columns)),
-                         ('CLEAN 11 (ex MYR/PHP/TWD)', CLEAN)]:
+    CLEAN = [c for c in ann.columns if c not in ('PHP', 'TWD')]
+    for label, names in [(f'ALL {len(ann.columns)} (ex MYR)', list(ann.columns)),
+                         (f'ex PHP/TWD ({len(CLEAN)})', CLEAN)]:
         print(f'\nPORTFOLIO - {label}, non-overlapping {HOLD}bd cycles')
         for cbp in [0.0, 0.5, 1.0, 2.0]:
             shs, ns = [], []
