@@ -473,13 +473,32 @@ def build(xlsx_path, outdir):
         L1put(L1, 'isi', wide_to_friday(es[list(isi)].rename(columns=isi)))
 
     # -------------------------------------------------- 12. TERMS OF TRADE ----
-    tot = load_cvts(wb['ToT'], header_row=4, data_row=5)
-    ren = {}
-    for c in tot.columns:
-        if isinstance(c, str) and 'CTOT_' in c:
-            code = c.split('CTOT_')[1].split(' ')[0].split('.')[0]
-            ren[c] = 'CNH' if code == 'CNY' else code
-    L1put(L1, 'ctot', wide_to_friday(tot[list(ren)].rename(columns=ren)))
+    # The ToT sheet has carried its CVTSHIST header on r3 or r4 across file
+    # versions (and at times two side-by-side blocks), so try both and merge.
+    frames = []
+    for hr in (3, 4):
+        try:
+            tt = load_cvts(wb['ToT'], header_row=hr, data_row=hr + 1)
+        except Exception:
+            continue
+        ren = {}
+        for c in tt.columns:
+            if isinstance(c, str) and 'CTOT_' in c:
+                code = c.split('CTOT_')[1].split(' ')[0].split('.')[0]
+                ren[c] = 'CNH' if code == 'CNY' else code
+        if ren:
+            frames.append(tt[list(ren)].rename(columns=ren))
+    if frames:
+        tot = frames[0]
+        for extra in frames[1:]:
+            tot = tot.combine_first(extra[[c for c in extra.columns]])
+        tot = tot.loc[:, ~tot.columns.duplicated()]
+        L1put(L1, 'ctot', wide_to_friday(tot))
+        missing_ctot = [c for c in TRADED if c not in tot.columns]
+        if missing_ctot:
+            notes.append(f'Terms of trade: no CTOT series in the workbook for '
+                         f'{missing_ctot} - the ToT sheet currently carries EM Asia '
+                         f'only (DM and EM5 columns were dropped in this file version).')
 
     # -------------------------------------------------- 13. REER ----
     reer = load_cvts(wb['REER'], header_row=3, data_row=4)
@@ -626,12 +645,14 @@ CORE_INPUTS = [
     ('fwd_pts', 'L1', 'fwd_pts_1m'),
     ('ca_yoy',  'L2', 'ca_yoy_usdbn'),
     ('esi',     'L1', 'esi'),
-    ('ctot',    'L1', 'ctot'),
 ]
 # (label, layer, table, {currencies where this factor is eligible / required})
 OPTIONAL_INPUTS = [
     ('cds',    'L1', 'cds_5y',  {'INR', 'KRW', 'MYR', 'IDR', 'PHP', 'BRL', 'PLN'}),
     ('equity', 'L1', 'equity',  {'KRW', 'TWD', 'INR'}),          # equity-flow: N.Asia only
+    # CTOT is carried for research but is NOT an input to the live composite
+    # (2x carry/realvol + 1x ESI), so it must not gate a currency.
+    ('ctot',   'L1', 'ctot',    set()),
 ]
 
 
