@@ -368,6 +368,33 @@ def build(xlsx_path, outdir):
     ca_m = pd.DataFrame(ca_raw)
     L1put(L1, 'current_account_usdbn', to_friday(ca_raw, MONTHLY_FFILL))
 
+    # -------------------------------------------------- 9b. CPI (monthly YoY) ----
+    ws = wb['CPI']
+    r6 = next(ws.iter_rows(min_row=6, max_row=6, values_only=True))
+    cpi_lab = {'Brazil': 'BRL', 'Mexico': 'MXN', 'Chile': 'CLP', 'Hungary': 'HUF',
+               'Japan': 'JPY', 'Europe': 'EUR', 'Canada': 'CAD', 'China': 'CNH',
+               'Korea': 'KRW', 'India': 'INR', 'Indonesia': 'IDR', 'Philippines': 'PHP',
+               'Thailand': 'THB', 'Taiwan': 'TWD', 'Singapore': 'SGD', 'Malaysia': 'MYR',
+               'US': 'US'}
+    main_cols, main_names, us_col, seen = [], [], None, set()
+    for c in range(2, 22):                         # C..S share date col B(1); US = (date U=20, val V=21)
+        lab = r6[c] if c < len(r6) else None
+        if not (isinstance(lab, str) and lab.strip()):
+            continue
+        ccy = cpi_lab.get(lab.replace('CPI YoY', '').strip())
+        if not ccy or ccy in seen:                 # skip duplicated Mexico column
+            continue
+        seen.add(ccy)
+        if ccy == 'US':
+            us_col = c
+        else:
+            main_cols.append(c)
+            main_names.append(ccy)
+    cpi_raw = load_block_pairs(ws, [(1, main_cols)], [main_names], 7)
+    if us_col is not None:
+        cpi_raw.update(load_block_pairs(ws, [(20, [us_col])], [['US']], 7))
+    L1put(L1, 'cpi_yoy', to_friday(cpi_raw, MONTHLY_FFILL))
+
     # -------------------------------------------------- 10. GOVT YIELDS ----
     ws = wb['Govt & FX Implied Yield']
     # (date_col, [1Y,2Y,5Y,10Y value cols], currency)
@@ -504,6 +531,21 @@ def build(xlsx_path, outdir):
 
     # implied-yield slope 12M-1M
     L2['implied_yield_slope_12m_1m'] = L1['fx_implied_yield_12m'] - L1['fx_implied_yield_1m']
+
+    # NEW: real yields (implied yield - CPI YoY) and real carry vs US
+    if 'cpi_yoy' in L1:
+        cpi = L1['cpi_yoy']
+        for ten in ['1m', '12m']:
+            iy = L1.get(f'fx_implied_yield_{ten}')
+            if iy is not None:
+                cc = [c for c in iy.columns if c in cpi.columns]
+                L2[f'real_yield_{ten}'] = iy[cc] - cpi[cc]
+        if 'US' in cpi.columns:
+            cpi_diff = cpi.drop(columns=['US']).sub(cpi['US'], axis=0)
+            L2['cpi_diff_vs_us'] = cpi_diff          # inflation differential (PPP drift)
+            cc = [c for c in L1['carry_1m_ann'].columns if c in cpi_diff.columns]
+            # real carry = nominal carry (implied yield - SOFR) minus inflation differential vs US
+            L2['real_carry_1m'] = L1['carry_1m_ann'][cc] - cpi_diff[cc]
 
     # yield-curve features vs US
     y2, y10 = L1['govt_yield_2y'], L1['govt_yield_10y']
