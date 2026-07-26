@@ -524,6 +524,16 @@ def build(xlsx_path, outdir):
     # NEW: 4-week change in 1M forward points
     L2['fwdpts_chg_4w'] = L1['fwd_pts_1m'].diff(4)
 
+    # NEW: 1W-vs-1M forward-points curve basis (annualized pips/yr) + 52w z.
+    # basis = 52*pts_1w - 12*pts_1m; ~0 under CIP, dislocates on funding
+    # squeezes / NDF expectation spikes -> funding RV signal (roll-tenor choice
+    # and the enter-1M-roll-1W reversion trade). Pip scale cancels within ccy.
+    p1w, p1m = L1['fwd_pts_1w'], L1['fwd_pts_1m']
+    common_p = [c for c in p1w.columns if c in p1m.columns]
+    basis = 52.0 * p1w[common_p] - 12.0 * p1m[common_p]
+    L2['fwdpts_basis_1w_1m'] = basis
+    L2['fwdpts_basis_z_52w'] = (basis - basis.rolling(52).mean()) / basis.rolling(52).std()
+
     # NEW: leveraged flow z minus real-money flow z (divergence) where both exist
     if 'pi_lv_flow_z' in L1:
         zl, zr = L1['pi_lv_flow_z'], L1['pi_rm_flow_z']
