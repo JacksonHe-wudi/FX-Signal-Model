@@ -17,11 +17,14 @@ pip_factor is calibrated per currency against the clean carry_1m_ann series
 Signal: z-score of the 4-week change in ann_rate, traded CONTRARIAN
 (fade the move). Cross-sectional, |z| gate, equal-risk legs.
 
-P&L: a 1M swap position held H days earns the change in the 1M rate over that
-window, scaled by the tenor: pnl = -side x (ann_rate_t+H - ann_rate_t)/12 x
-(H/21) in monthly-rate units -> expressed in bp of notional. Costs are charged
-per entry on the points bid/ask (the relevant spread for a swap is the POINTS
-spread, typically well under 1bp of notional for liquid 1M NDF).
+P&L: an FX swap held to maturity has NO mark-to-market - its P&L is locked at
+inception. To monetise a points move you must UNWIND EARLY, and the gain is
+    pnl = -side x (rate_{t+H} - rate_t) x (TENOR - H)/TENOR / 12
+i.e. the rate move times the REMAINING duration. Holding a 1M swap for a full
+month leaves ~5% duration, so a fixed bid/ask in bp of notional swamps the
+P&L (1bp cost takes gross +1.74 to -5.27). Holding ~1 week keeps ~76% of the
+duration and is the workable point. Costs are charged per entry on the points
+bid/ask.
 """
 import numpy as np
 import pandas as pd
@@ -33,7 +36,8 @@ MAX_ANN = 40.0          # implied annualized rate beyond this = unusable tick
 CAL_WIN = 250           # rolling window (bd) for recalibrating the pip factor
 EXCLUDE = ('MYR',)      # points/carry disagree even in SIGN - unusable
 LOOKBACK = 20           # business days (~4 weeks) for the momentum being faded
-HOLD = 20               # holding period in business days
+TENOR_BD = 21           # 1M swap ~ 21 business days
+HOLD = 5                # unwind after ~1 week, keeping ~76% of the duration
 Z_GATE = 1.0
 
 
@@ -87,12 +91,14 @@ def main():
     # Contrarian: rate rose (z>0) -> bet it falls -> position +1. So sig = z.
     sig = z
 
-    # forward P&L of a 1M swap over HOLD days, in bp of notional:
-    # holding the points position earns the change in the monthly rate
-    fwd = -(ann.shift(-HOLD) - ann) / 12.0 * 100.0        # bp, per unit short-rate
-    fwd = fwd * (HOLD / 21.0)
+    # P&L of entering a 1M swap and unwinding after HOLD days, in bp:
+    # rate move x REMAINING duration (the swap decays to zero duration at
+    # maturity, so a full-tenor hold has almost nothing left to monetise)
+    remaining = (TENOR_BD - HOLD) / TENOR_BD / 12.0        # years
+    fwd = -(ann.shift(-HOLD) - ann) * remaining * 100.0    # bp
 
-    print(f'\nper-currency: FADE the 4w move in the 1M rate, hold {HOLD}bd, |z|>{Z_GATE}')
+    print(f'\nper-currency: FADE the 4w move in the 1M rate, unwind after {HOLD}bd '
+          f'({100*(TENOR_BD-HOLD)/TENOR_BD:.0f}% duration left), |z|>{Z_GATE}')
     print(f"{'ccy':<5}{'n':>6}{'hit':>7}{'mean_bp':>9}{'t':>7}")
     rows = []
     for c in ann.columns:

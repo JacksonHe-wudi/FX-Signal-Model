@@ -3,26 +3,31 @@ Portfolio stack - combine the validated sleeves at equal risk (5% vol each).
 
   A  concentrated 14-ccy cross-sectional RV book   (sleeve_a_rv.py)
   B  EM beta funded 50% CAD + 50% G3               (funding_overlay.py)
-  C  fade the 1M forward-points move (funding RV)  (sleeve_c_points.py)
   D  CNH PBOC fixing-bias signal                   (cnh_fixing_signal.py)
 
 A bets on relative currency strength, B on EM beta versus a funding basket,
-C on the funding market itself, D on one central bank's fixing. Pairwise
-correlations are near zero, which is what makes the stack add Sharpe.
+D on one central bank's fixing. Pairwise correlations are near zero, which is
+what makes the stack add Sharpe.
 
-Sample notes: A/B run 2013+, C 2013+ (daily forwards now reach back), D only
-from 2018-06 (the Bloomberg fixing survey starts then). Sleeves are equal-risk
-scaled, then weighted; missing history is treated as flat (0), so early years
-are effectively A+B+C.
+Sleeve C (fade the 1M forward-points move) is BUILT AND VALIDATED but NOT
+included: its signal is strong gross (Sharpe 2.5-2.6) yet an FX swap held to
+maturity has no mark-to-market, so the move must be monetised by unwinding
+early into a broken-date swap. That means a round trip of ~2.3 one-way spreads
+against only 76% of the tenor's duration, and the sleeve turns negative beyond
+~0.5bp one-way. Kept in the repo (sleeve_c_points.py) for a venue where that
+spread is achievable.
 
-Run AFTER: sleeve_a_rv.py, funding_overlay.py, sleeve_c_points.py,
-cnh_fixing_signal.py.
+Sample notes: A/B run 2013+, D only from 2018-06 (the Bloomberg fixing survey
+starts then). Sleeves are equal-risk scaled, then weighted; missing history is
+treated as flat (0), so pre-2018 the stack is effectively A+B.
+
+Run AFTER: sleeve_a_rv.py, funding_overlay.py, cnh_fixing_signal.py.
 """
 import numpy as np
 import pandas as pd
 
 AN = 'analysis'
-WEIGHTS = {'A': 0.40, 'B': 0.20, 'C': 0.20, 'D': 0.20}
+WEIGHTS = {'A': 0.50, 'B': 0.25, 'D': 0.25}
 
 
 def perf(r, name):
@@ -45,11 +50,9 @@ def sleeves():
     fo = pd.read_csv(f'{AN}/funding_overlay_curves.csv', index_col=0, parse_dates=True)
     B = 0.5 * fo['em_g3'] + 0.5 * fo['em_cad']
     # C: monthly-cycle P&L in bp -> weekly series
-    c_raw = pd.read_csv(f'{AN}/sleeve_c_curve.csv', index_col=0, parse_dates=True)
-    C = (c_raw['ret_bp'] / 1e4).resample('W-FRI').sum()
     cn = pd.read_csv(f'{AN}/cnh_fixing_signal.csv', index_col=0, parse_dates=True)
     D = (np.sign(cn['signal']) * cn['tot_next']).where(cn['signal'] != 0, 0.0)
-    return {'A': A, 'B': B, 'C': C, 'D': D}
+    return {'A': A, 'B': B, 'D': D}
 
 
 def main():
@@ -69,9 +72,8 @@ def main():
     print(perf(combo, f'STACK {lbl}'))
     eq = df.fillna(0).mean(axis=1)[df['A'].notna()]
     print(perf(eq, 'STACK equal-weight (robustness)'))
-    abd = (0.5 * df['A'].fillna(0) + 0.25 * df['B'].fillna(0)
-           + 0.25 * df['D'].fillna(0))[df['A'].notna()]
-    print(perf(abd, 'STACK A50/B25/D25 (previous, no C)'))
+    ab = (0.6 * df['A'].fillna(0) + 0.4 * df['B'].fillna(0))[df['A'].notna()]
+    print(perf(ab, 'STACK A60/B40 (no D, pre-2018 shape)'))
 
     print('\nsubsamples (main stack):')
     for nm, a, b in [('2013-2016', '2013', '2016'), ('2017-2019', '2017', '2019'),
