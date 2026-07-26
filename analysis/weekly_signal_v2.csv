@@ -1,0 +1,15 @@
+ccy,z,action,weight,basis_ann_pips,roll_tenor,gate
+CNH,-1.13,空 SHORT,-65.6%,-50.0,1W roll,READY
+IDR,0.34,—,,-10.0,,READY
+INR,0.76,多 LONG,+50.0%,3.0,1W roll,READY
+KRW,-0.23,—,,2.0,,READY
+MYR,0.33,—,,62.0,,READY
+PHP,1.1,多 LONG,+43.6%,0.0,1W roll,READY
+SGD,-1.82,空 SHORT,-43.4%,-0.0,1W roll,READY
+THB,-0.12,—,,56.0,,READY
+TWD,-1.54,空 SHORT,-28.7%,-1.0,1W roll,READY
+BRL,0.96,多 LONG,+26.4%,-198.0,锁 1M,READY
+MXN,1.49,多 LONG,+36.5%,-39.0,锁 1M,READY
+CLP,0.05,—,,1.0,,READY
+PLN,-0.72,空 SHORT,-18.8%,22.0,锁 1M,READY
+HUF,0.53,—,,-32.0,,READY
