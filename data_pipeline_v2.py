@@ -319,10 +319,10 @@ def build(xlsx_path, outdir):
             ccf = (cff['CNY_FIX'] - cff['BBG_CNY_FIX']).to_frame('CNH')
             L2['cny_ccf'] = clip_start(ccf.dropna(how='all'))
     notes.append('Country factors: SGD_NEER band (mid/upper/lower) = SGD valuation anchor; '
-                 'CNY_FIX = PBOC USD/CNY central parity; BBG_CNY_FIX = Bloomberg model-implied fix (from 2018-06); '
+                 'CNY_FIX = PBOC USD/CNY central parity; BBG_CNY_FIX = Bloomberg CNY fixing survey (market expectation, from 2018-06); '
                  'CFETS_RMB_INDEX = CNY basket; THAI_TOURISM_EQ / THAI_TOURIST_ARRIVALS; '
                  'KOSPI_FOREIGN_NET / KOSPI_FINANCIAL_NET / KOSPI_KOSDAQ_FOREIGN = Korea equity flows; '
-                 'INDIA_OIL_IMPORTS. L2_cny_ccf = CNY_FIX - BBG_CNY_FIX = PBOC counter-cyclical factor '
+                 'INDIA_OIL_IMPORTS. L2_cny_ccf = CNY_FIX - BBG_CNY_FIX = PBOC fixing bias vs survey (regime-dependent, not a fixed sign) '
                  '(negative bullish CNH), available from 2018-06.')
 
     # -------------------------------------------------- 7. CDS 5Y ----
@@ -578,44 +578,62 @@ def build(xlsx_path, outdir):
 
 
 # ================================================================ completeness
-KEY_INPUTS = [
-    ('spot',        'L1', 'spot_usd_traded'),
-    ('carry',       'L1', 'carry_1m_ann'),
-    ('vol_atm',     'L1', 'vol_implied_atm_1m'),
-    ('rr25',        'L1', 'rr25_1m'),
-    ('fwd_pts',     'L1', 'fwd_pts_1m'),
-    ('ca_yoy',      'L2', 'ca_yoy_usdbn'),
-    ('esi',         'L1', 'esi'),
-    ('cds',         'L1', 'cds_5y'),
-    ('ctot',        'L1', 'ctot'),
-    ('equity',      'L1', 'equity'),
+# Per-currency completeness (disciplined heterogeneity): a currency is only
+# required to have the inputs for the factors that are ON for it. CORE inputs are
+# required for every traded currency; OPTIONAL inputs are required only for the
+# currencies where that factor is eligible (else reported 'n/a', not blocking).
+CORE_INPUTS = [
+    ('spot',    'L1', 'spot_usd_traded'),
+    ('carry',   'L1', 'carry_1m_ann'),
+    ('vol_atm', 'L1', 'vol_implied_atm_1m'),
+    ('rr25',    'L1', 'rr25_1m'),
+    ('fwd_pts', 'L1', 'fwd_pts_1m'),
+    ('ca_yoy',  'L2', 'ca_yoy_usdbn'),
+    ('esi',     'L1', 'esi'),
+    ('ctot',    'L1', 'ctot'),
+]
+# (label, layer, table, {currencies where this factor is eligible / required})
+OPTIONAL_INPUTS = [
+    ('cds',    'L1', 'cds_5y',  {'INR', 'KRW', 'MYR', 'IDR', 'PHP', 'BRL', 'PLN'}),
+    ('equity', 'L1', 'equity',  {'KRW', 'TWD', 'INR'}),          # equity-flow: N.Asia only
 ]
 
 
 def completeness_report(L1, L2, asof=None, stale_days=70):
-    """For a given (default latest) Friday, PRESENT/MISSING per traded ccy x input.
+    """Per-currency PRESENT/MISS/n-a for the latest Friday.
 
-    Uses as-of alignment: an input is PRESENT if its most recent observation on or
-    before `asof` is non-missing and no older than `stale_days` (so monthly series
-    such as ca_yoy, whose grid can end a few weeks before the latest spot Friday,
-    are not falsely flagged).
+    An input is PRESENT if its most recent observation on/before `asof` is
+    non-missing and no older than `stale_days` (monthly series like ca_yoy lag a
+    few weeks, so they are not falsely flagged). A currency is READY when all its
+    CORE inputs plus every OPTIONAL input it is *eligible* for are present.
     """
     src = {'L1': L1, 'L2': L2}
     if asof is None:
         asof = L1['spot_usd_traded'].index.max()
     asof = pd.Timestamp(asof)
+
+    def present(layer, tbl, ccy):
+        df = src[layer].get(tbl)
+        if df is None or ccy not in df.columns:
+            return False
+        s = df[ccy]
+        s = s[s.index <= asof].dropna()
+        return bool(len(s) and (asof - s.index[-1]).days <= stale_days)
+
     rows = []
     for ccy in TRADED:
         rec = {'currency': ccy}
         missing = []
-        for label, layer, tbl in KEY_INPUTS:
-            df = src[layer].get(tbl)
-            ok = False
-            if df is not None and ccy in df.columns:
-                s = df[ccy]
-                s = s[s.index <= asof].dropna()
-                if len(s) and (asof - s.index[-1]).days <= stale_days:
-                    ok = True
+        for label, layer, tbl in CORE_INPUTS:
+            ok = present(layer, tbl, ccy)
+            rec[label] = 'OK' if ok else 'MISS'
+            if not ok:
+                missing.append(label)
+        for label, layer, tbl, eligible in OPTIONAL_INPUTS:
+            if ccy not in eligible:
+                rec[label] = 'n/a'                       # factor off for this ccy
+                continue
+            ok = present(layer, tbl, ccy)
             rec[label] = 'OK' if ok else 'MISS'
             if not ok:
                 missing.append(label)
@@ -682,7 +700,7 @@ EXCEL_SPEC = [
     ('Current Account Yearly Change', 'L2', 'ca_yoy_usdbn', 'Year-over-year change in the current account, USD bn.', '0.0'),
     ('Forward Points Change 4 Weeks', 'L2', 'fwdpts_chg_4w', 'Four-week change in 1M forward points (funding dynamics).', '0.000'),
     ('Positioning Lev minus RM', 'L2', 'pi_lv_minus_rm', 'Leveraged flow z minus real-money flow z (divergence).', '0.00'),
-    ('CNH PBOC CCF', 'L2', 'cny_ccf', 'CNY fix minus BBG model fix = PBOC counter-cyclical factor (neg = bullish CNH, from 2018-06).', '0.0000'),
+    ('CNH PBOC CCF', 'L2', 'cny_ccf', 'CNY fix minus BBG fixing survey = PBOC fixing bias vs market expectation; regime-dependent (from 2018-06).', '0.0000'),
     ('Yield Curve Slope', 'L2', 'curve_slope_10y2y', 'Ten-year minus two-year government yield.', '0.000'),
     ('Slope Differential vs US', 'L2', 'slope_diff_vs_us', 'Local 10Y-2Y slope minus US slope.', '0.000'),
     ('Yield Differential 2Y vs US', 'L2', 'ydiff_2y_vs_us', 'Local 2Y yield minus US 2Y yield.', '0.000'),
