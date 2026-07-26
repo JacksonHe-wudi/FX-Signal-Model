@@ -340,8 +340,9 @@ def build(xlsx_path, outdir):
     r5 = next(ws.iter_rows(min_row=5, max_row=5, values_only=True))
     def com_name(col, h):
         lab = r5[col] if col < len(r5) and r5[col] else h
-        return str(lab).strip().replace(' ', '_').replace('-', '_').replace('/', '_')
-    com = auto_blocks(ws, 6, 7, 1, 23, com_name)               # r6 has tickers, r5 nice labels
+        nm = str(lab).strip().replace(' ', '_').replace('-', '_').replace('/', '_')
+        return {'S_1_Comdty': 'Soybean'}.get(nm, nm)           # soybean has no r5 label
+    com = auto_blocks(ws, 6, 7, 1, 25, com_name)               # r6 tickers, r5 labels; cols to 25 (Korea Semi)
     # KOEISEU (Korea semi price) is monthly; separate it out
     monthly = {k: v for k, v in com.items() if 'KOEISEU' in k.upper() or 'Korea_Semi' in k}
     weekly = {k: v for k, v in com.items() if k not in monthly}
