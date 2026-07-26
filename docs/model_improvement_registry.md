@@ -153,6 +153,7 @@
 - 隐含 slope · 6 个国债 tenor-pair 斜率及其 4周变化 · CTOT 变化(13w) · 商品招牌篮子 · 曲度 · **绝对股指动量**(注意:横截面版 M1 未测,不在墓地) · 周度偏度(日度 skew 见 X/降级) · 周度 ε · 利率动量(隐含/国债 4周变化) · vol 期限结构 · 我们旧构造的季节性(见 X2 需重测)
 - **利率差/rate momentum 在 EM 无效**(Willer 表4.2 验证:2年利率完美预见在 EM 亏钱)——**别再建亚洲利率动量信号**
 - **realized skewness 在 FX 弱**(MS 专题:FX 是最弱资产类,夏普0.06-0.08;2026 预测 EM −2.4%)——**日度 skew 降为低优先级实验**,不是之前误传的"最强 EM 因子"
+- **北亚外资股票流(KRX/TWSE 公开数据)周度全变体死亡**(2026-07 实测):KRW/TWD 的 raw flow z(IC −0.03/−0.05)、4周和、KRW−TWD 相对价差、|z|>1 触发式、以及 Willer 点名的"surge-not-in-price"变体(TWD 多头侧 t **−2.07** 反向显著)全部无效——**印证 Willer Fig4.20 "Asia FX leads equity flows"(流量追价格,不领先)**。数据保留在 `L1_country_factors`(TW_FOREIGN_NET 日度周求和 / KOSPI 系列),但不进模型;若未来做月度或事件口径可重访
 
 ---
 

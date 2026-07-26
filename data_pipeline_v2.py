@@ -304,13 +304,26 @@ def build(xlsx_path, outdir):
         'SETTOUR':  'THAI_TOURISM_EQ', 'THTATOTA': 'THAI_TOURIST_ARRIVALS',
         'KPCPNTFR': 'KOSPI_FOREIGN_NET', 'KPCPNTSE': 'KOSPI_FINANCIAL_NET', 'KSFINET': 'KOSPI_KOSDAQ_FOREIGN',
         'PEIMCRUV': 'INDIA_OIL_IMPORTS',
+        'TINFNET$': 'TW_FOREIGN_NET',           # Taiwan foreign net inflow, DAILY USD mn
+        'TWFFTTLO': 'TW_FOREIGN_NET_MONTHLY',   # Taiwan foreign net inflow, monthly
     }
+    CF_MONTHLY = {'THAI_TOURIST_ARRIVALS', 'INDIA_OIL_IMPORTS', 'TW_FOREIGN_NET_MONTHLY'}
     def cf_name(col, h):
         tk = str(h).split()[0]                  # ticker like 'GSSGMID'
         return CF_MAP.get(tk, tk)
-    cf = auto_blocks(ws, 6, 8, 1, 26, cf_name)
+    cf = auto_blocks(ws, 6, 8, 1, 34, cf_name)
     if cf:
-        cff = to_friday(cf, WEEKLY_FFILL)
+        # TW_FOREIGN_NET is a DAILY flow -> weekly SUM (as-of last-obs would
+        # keep only Friday's daily flow and drop the rest of the week)
+        tw_daily = cf.pop('TW_FOREIGN_NET', None)
+        weekly = {k: v for k, v in cf.items() if k not in CF_MONTHLY}
+        monthly = {k: v for k, v in cf.items() if k in CF_MONTHLY}
+        cff = to_friday(weekly, WEEKLY_FFILL)
+        if monthly:
+            cff = cff.join(to_friday(monthly, MONTHLY_FFILL))
+        if tw_daily is not None and len(tw_daily):
+            cff = cff.join(tw_daily.resample('W-FRI').sum(min_count=1)
+                           .rename('TW_FOREIGN_NET'))
         L1put(L1, 'country_factors', cff)
         # DERIVED: PBOC counter-cyclical factor = actual CNY fix - BBG model fix
         # (negative = PBOC leans to support CNH / bullish; positive = tolerates depreciation).
