@@ -278,6 +278,7 @@ signal[t] = +sign(CCF[t])
 | sentiment 成员逐个 | RR z −1.15 · VRP(faded)−1.74 · basis z −0.17;divergence t+3.44 **但按构造含 F,无效** | ❌ 期权类横截面 sentiment 全灭 |
 | A+D 融合(CCF 注入综合分) | λ=0.5/1/2 → 1.19/1.20/1.30 vs 分开 1.56 | ❌ corr(A,D)≈0 就是价值,别合并 |
 | 日度技术门(有日度数据后) | 无门 1.08 → vamom 0.75 / MA cross 0.63;0.5x tilt 也全降 | ❌ 日度频率同样死 |
+| TSMOM(MOP 2012 经典时序趋势,独立账本) | 4/12/26/52 周全测:Sharpe 0.04–0.30,maxDD −14~−20%;spot-only 信号更差;EM-only 更差 | ❌ 教科书式趋势跟踪在这个池子上也不成立 |
 | funding regime 切换(平静吃carry/波动切高beta) | F3 = **0.06**,stress 段 −0.34:vol 起来时高 beta 已跌完,切换正好挨反弹 | ❌ 用户假设不成立 |
 | funding = 最低 carry 3 只(JPY/EUR/TWD) | B 单独 0.66→**0.93**,两个 regime 都稳 | ⚠️ **但** corr(A,B) 0.21→0.41(carry 因子重复计入),组合 1.58→1.59(t 0.95)、回撤 −3.3→−4.2,**不采纳** |
 
