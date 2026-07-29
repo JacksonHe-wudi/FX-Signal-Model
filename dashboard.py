@@ -220,7 +220,7 @@ st.caption(f'data as of **{ASOF.date()}** · 13 tradable EM currencies '
            f'Sharpe 1.51 ± 0.08')
 
 tabs = st.tabs(['🎯 Overview', '💱 Currency deep-dive', '🧪 Backtester',
-                '🤖 ML Lab', '📰 News & data'])
+                '🤖 ML Lab', '🧭 Drivers & Meta', '📰 News & data'])
 
 
 # ------------------------------------------------------------ overview -----
@@ -590,8 +590,103 @@ The 2-member composite remains the best signal we can defend.
         st.warning('run `python3 ml_factor.py` to populate this tab')
 
 
-# ------------------------------------------------------------- news ---------
+# ------------------------------------------------- drivers & meta -----------
 with tabs[4]:
+    d1, d2 = st.columns([3, 2])
+    with d1:
+        st.subheader('What drives each currency (PCA, trailing 2y)')
+        st.caption('PCA on standardized weekly returns. PC1 = the dollar/EM '
+                   'factor (corr 0.97 with the EM basket, 0.70 with DXY); '
+                   'PC2 = carry / LATAM-vs-APAC factor; PC3 = residual LATAM '
+                   'beta. Run `python3 pca_drivers.py` to refresh.')
+        try:
+            vd = pd.read_csv('analysis/pca_var_decomp.csv', header=[0, 1],
+                             index_col=0)['roll104'] * 100
+            comp_names = {'PC1': 'dollar / EM factor',
+                          'PC2': 'carry / region factor',
+                          'PC3': 'LATAM residual', 'idio': 'idiosyncratic'}
+            figp = go.Figure()
+            cols = {'PC1': '#00bdf2', 'PC2': '#f2c500', 'PC3': '#d6336c',
+                    'idio': '#4a5568'}
+            for pc in ['PC1', 'PC2', 'PC3', 'idio']:
+                figp.add_trace(go.Bar(x=vd.index, y=vd[pc],
+                                      name=comp_names[pc],
+                                      marker_color=cols[pc]))
+            figp.update_layout(barmode='stack', height=340,
+                               yaxis_title='% of variance',
+                               legend=dict(orientation='h'),
+                               margin=dict(l=10, r=10, t=10, b=10), **PLOT_BG)
+            st.plotly_chart(figp, use_container_width=True)
+            dom = vd[['PC1', 'PC2', 'PC3', 'idio']].idxmax(axis=1)
+            st.caption('dominant driver now: ' + ' · '.join(
+                f'**{c}** {comp_names[dom[c]].split(" /")[0]}'
+                f' ({vd.loc[c, dom[c]]:.0f}%)'
+                for c in vd.index))
+        except FileNotFoundError:
+            st.warning('run `python3 pca_drivers.py` first')
+    with d2:
+        st.subheader('Strategy leaderboard — trailing 12m')
+        st.caption('Sharpe of each library strategy, last 52 weeks vs full '
+                   'sample. The tempting move is to switch into whatever is '
+                   'hot - see the verdict below before doing that.')
+        try:
+            SL = pd.read_csv('analysis/strategy_library.csv', index_col=0,
+                             parse_dates=True)
+
+            def _sh(r):
+                r = r.dropna()
+                return r.mean() / r.std() * np.sqrt(52) if len(r) > 20 else np.nan
+            lb = pd.DataFrame({
+                'last 12m': SL.iloc[-52:].apply(_sh),
+                'full sample': SL.apply(_sh)}).sort_values('last 12m',
+                                                           ascending=False)
+            st.dataframe(lb.style.format('{:+.2f}')
+                         .background_gradient(cmap='RdYlGn', vmin=-1, vmax=2),
+                         height=290)
+        except FileNotFoundError:
+            st.warning('run `python3 pca_drivers.py` first')
+
+    st.subheader('Auto-selection backtest — does chasing the best 12m Sharpe work?')
+    try:
+        M = pd.read_csv('analysis/meta_selector.csv', index_col=0,
+                        parse_dates=True)
+
+        def _row(r):
+            r = r.dropna()
+            cum = r.cumsum()
+            return {'Sharpe': r.mean() / r.std() * np.sqrt(52),
+                    'ann %': 52 * r.mean() * 100,
+                    'maxDD %': 100 * (cum - cum.cummax()).min()}
+        res = pd.DataFrame({c: _row(M[c]) for c in M.columns}).T \
+            .sort_values('Sharpe', ascending=False)
+        c1_, c2_ = st.columns([1, 2])
+        with c1_:
+            st.dataframe(res.style.format('{:+.2f}'))
+            st.error('**Verdict: chasing loses.** Monthly re-selection by '
+                     'trailing 52w Sharpe scores 1.03 vs 1.33 for simply '
+                     'holding the live composite (2015+, before switching '
+                     'costs - 39 full-book switches in 138 months would make '
+                     'it worse). Recent winners mean-revert; the composite\'s '
+                     'edge is structural. The leaderboard above is for '
+                     'MONITORING, not for switching.')
+        with c2_:
+            figm2 = go.Figure()
+            for c in M.columns:
+                r = M[c].dropna()
+                figm2.add_trace(go.Scatter(
+                    x=r.index, y=100 * r.cumsum(), name=c,
+                    line=dict(width=2.2 if c == 'static LIVE' else 1.2)))
+            figm2.update_layout(height=330, yaxis_title='cumulative %',
+                                legend=dict(orientation='h'),
+                                margin=dict(l=10, r=10, t=10, b=10),
+                                **PLOT_BG)
+            st.plotly_chart(figm2, use_container_width=True)
+    except FileNotFoundError:
+        st.warning('run `python3 pca_drivers.py` first')
+
+
+# ------------------------------------------------------------- news ---------
+with tabs[5]:
     st.subheader('News & official data (auto-pulled)')
     try:
         import feedparser
