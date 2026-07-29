@@ -72,9 +72,13 @@ import pandas as pd
 START = pd.Timestamp('2013-01-01')
 ASIA9 = ['CNH', 'IDR', 'INR', 'KRW', 'MYR', 'PHP', 'SGD', 'THB', 'TWD']
 EM5 = ['BRL', 'MXN', 'CLP', 'PLN', 'HUF']
-TRADED = ASIA9 + EM5
+# MYR is EXCLUDED from trading: Citi cannot trade MYR NDF for us. Its data is
+# still cleaned (ALLCCY) so it can be re-admitted by editing this one line.
+# Side note: MYR also has the worst data quality of the 14 (pip-scale factor
+# drifting 1554..8551), so dropping it was already the marginal call.
+TRADED = [c for c in ASIA9 + EM5 if c != 'MYR']     # 13 tradable
 FUNDING = ['EUR', 'JPY', 'CAD']
-ALLCCY = TRADED + FUNDING
+ALLCCY = ASIA9 + EM5 + FUNDING
 
 WEEKLY_FFILL, MONTHLY_FFILL = 2, 8
 VOL_TARGET = 0.05           # per-sleeve annualized vol target
@@ -420,7 +424,10 @@ def sleeve_B(T):
         s = s - wt * spot_ret[k]
         c = c - wt * carry_ret[k]
     lev = vol_target(s + c)
-    return {'spot': s * lev, 'carry': c * lev, 'weights': w.mul(lev, axis=0)}
+    fund = pd.DataFrame({k: -wt * lev for k, wt in FUND_BASKET.items()
+                         if k != 'USD'})
+    return {'spot': s * lev, 'carry': c * lev,
+            'weights': w.mul(lev, axis=0), 'fund_w': fund}
 
 
 def sleeve_D(T):
@@ -441,7 +448,7 @@ def sleeve_D(T):
     s = sig * spot_ret['CNH']
     c = sig * carry_ret['CNH']
     lev = vol_target((s + c).where(ccf.shift(1).notna()))
-    return {'spot': s * lev, 'carry': c * lev, 'signal': sig}
+    return {'spot': s * lev, 'carry': c * lev, 'signal': sig, 'lev': lev}
 
 
 # ======================================================== 4. BACKTEST =======
@@ -497,12 +504,99 @@ def ensemble(T, n=12, jitter=1e-12):
     return np.array(outA), np.array(outS)
 
 
+def ccy_contrib(T, S, tot):
+    """Weekly P&L contribution of every currency to the WHOLE portfolio,
+    at the live risk budget - the sum across currencies equals the stack."""
+    sr, cr = legs(T)
+    ret = sr.add(cr, fill_value=None)
+    k = {n: VOL_TARGET / ((S[n]['spot'] + S[n]['carry']).dropna().std() * np.sqrt(52))
+         for n in RISK}
+    idx = (S['A']['spot'] + S['A']['carry']).dropna().index
+    out = pd.DataFrame(0.0, index=idx, columns=[c for c in ALLCCY if c != 'MYR'])
+    # sleeve A: weights already include mult, lev, and the t-1 shift
+    WA = S['A']['weights'].reindex(idx) * k['A'] * RISK['A']
+    for c in TRADED:
+        out[c] += (WA[c] * ret[c]).fillna(0)
+    # sleeve B: EM leg + funding legs
+    WB = S['B']['weights'].reindex(idx) * k['B'] * RISK['B']
+    for c in TRADED:
+        out[c] += (WB[c] * ret[c]).fillna(0)
+    FB = S['B']['fund_w'].reindex(idx) * k['B'] * RISK['B']
+    for c in FB.columns:
+        out[c] += (FB[c] * ret[c]).fillna(0)
+    # sleeve D: CNH only
+    wD = (S['D']['signal'] * S['D']['lev']).reindex(idx) * k['D'] * RISK['D']
+    out['CNH'] += (wD * ret['CNH']).fillna(0)
+    return out
+
+
+def chart_contrib(contrib, stack, outdir):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    cum = 100 * contrib.cumsum()
+    order = cum.iloc[-1].sort_values(ascending=False).index
+    cmap = plt.get_cmap('tab20')
+
+    fig = plt.figure(figsize=(13, 12))
+    gs = fig.add_gridspec(3, 1, height_ratios=[2.6, 2.2, 1.3], hspace=0.34)
+
+    ax = fig.add_subplot(gs[0])
+    for i, c in enumerate(order):
+        lw = 2.0 if abs(cum[c].iloc[-1]) >= 3 else 1.0
+        ax.plot(cum.index, cum[c], lw=lw, color=cmap(i % 20),
+                label=f'{c} {cum[c].iloc[-1]:+.1f}%')
+    ax.plot(stack.index, 100 * stack.cumsum(), lw=2.6, color='#111',
+            label=f'TOTAL {100*stack.sum():+.1f}%')
+    ax.axhline(0, color='#999', lw=0.7)
+    ax.set_ylabel('cumulative contribution (% of book)')
+    ax.set_title('Per-currency contribution to the WHOLE portfolio (A+B+D, '
+                 'live risk budget)\nlines sum to the black total', loc='left',
+                 fontsize=12)
+    ax.legend(loc='upper left', fontsize=7, ncol=3)
+    ax.grid(alpha=0.25)
+
+    # rolling 52w annualized contribution, as a heatmap
+    ax2 = fig.add_subplot(gs[1])
+    roll = (contrib.rolling(52).sum() * 100).iloc[51:]
+    im = ax2.imshow(roll[order].T.values, aspect='auto', cmap='RdBu_r',
+                    vmin=-2.5, vmax=2.5,
+                    extent=[0, len(roll), len(order), 0])
+    ax2.set_yticks(np.arange(len(order)) + 0.5)
+    ax2.set_yticklabels(order, fontsize=8)
+    step = max(1, len(roll) // 8)
+    ax2.set_xticks(np.arange(0, len(roll), step))
+    ax2.set_xticklabels([d.strftime('%Y-%m') for d in roll.index[::step]],
+                        fontsize=8)
+    ax2.set_title('rolling 52-week contribution (% per year)  red = making '
+                  'money, blue = losing', loc='left', fontsize=10)
+    fig.colorbar(im, ax=ax2, fraction=0.025, pad=0.01)
+
+    ax3 = fig.add_subplot(gs[2])
+    tot = cum.iloc[-1][order]
+    ax3.bar(np.arange(len(tot)), tot.values,
+            color=['#2e8f5b' if v >= 0 else '#b7333a' for v in tot.values])
+    ax3.set_xticks(np.arange(len(tot)))
+    ax3.set_xticklabels(tot.index, fontsize=8)
+    ax3.axhline(0, color='#333', lw=0.8)
+    ax3.set_ylabel('total contribution %')
+    ax3.set_title('whole-sample contribution by currency', loc='left', fontsize=10)
+    ax3.grid(alpha=0.25, axis='y')
+
+    p = os.path.join(outdir, 'pnl_by_currency.png')
+    fig.savefig(p, dpi=140, bbox_inches='tight', facecolor='white')
+    plt.close(fig)
+    return p
+
+
 def report(T, S, tot, parts, stack, att):
     W = 78
     print('=' * W)
     print('FX WEEKLY MODEL - BACKTEST')
     print(f'sample {stack.index.min().date()} .. {stack.index.max().date()}'
-          f'   {len(stack)} weeks   14 currencies')
+          f'   {len(stack)} weeks   {len(TRADED)} tradable currencies '
+          f'(MYR excluded: Citi cannot trade MYR NDF)')
     print('=' * W)
 
     def line(name, r):
@@ -799,6 +893,9 @@ def main():
         try:
             for p in charts(parts, stack, att, a.outdir):
                 print(f'chart written to {p}')
+            contrib = ccy_contrib(T, S, tot)
+            print(f'chart written to {chart_contrib(contrib, stack, a.outdir)}')
+            contrib.to_csv(os.path.join(a.outdir, 'contrib_by_ccy.csv'))
         except ImportError:
             print('matplotlib not installed - charts skipped')
 
