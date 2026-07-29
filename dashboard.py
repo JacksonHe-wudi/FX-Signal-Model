@@ -45,6 +45,37 @@ CCY_COUNTRY = {'CNH': 'China', 'IDR': 'Indonesia', 'INR': 'India',
 st.set_page_config(page_title='FX Model Dashboard', page_icon='🌏',
                    layout='wide')
 
+# ---- Citi-Velocity-inspired look: dark navy, cyan accent, spaced uppercase
+# section headers, region-coded categorical colors ----
+st.markdown('''<style>
+h1 { font-size: 1.55rem !important; letter-spacing: .02em; }
+h2, h3 { text-transform: uppercase; letter-spacing: .18em;
+         font-size: .95rem !important; font-weight: 600 !important;
+         color: #e6edf3 !important; }
+h2::after, h3::after { content: " \\00BB"; color: #00bdf2; }
+[data-testid="stCaptionContainer"] { color: #8b98a9 !important; }
+.stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid #1f2937; }
+.stTabs [data-baseweb="tab"] { text-transform: uppercase;
+  letter-spacing: .1em; font-size: .8rem; }
+[data-testid="stMetricValue"] { color: #00bdf2; }
+a { color: #00bdf2 !important; }
+thead th { background: #131a26 !important; }
+</style>''', unsafe_allow_html=True)
+
+REGION = {**{c: 'APAC' for c in ['CNH', 'IDR', 'INR', 'KRW', 'PHP', 'SGD',
+                                 'THB', 'TWD', 'MYR']},
+          **{c: 'CEEMEA' for c in ['PLN', 'HUF']},
+          **{c: 'LATAM' for c in ['BRL', 'MXN', 'CLP']},
+          **{c: 'G10' for c in ['EUR', 'JPY', 'CAD', 'USD']}}
+RCOL = {'APAC': '#f2c500', 'CEEMEA': '#d6336c', 'LATAM': '#7048a8',
+        'G10': '#f76707', 'Thematic': '#74b816'}
+PLOT_BG = dict(template='plotly_dark', paper_bgcolor='rgba(0,0,0,0)',
+               plot_bgcolor='rgba(0,0,0,0)')
+
+
+def ccy_colors(seq):
+    return [RCOL.get(REGION.get(c, 'Thematic'), '#74b816') for c in seq]
+
 
 # ================================================================= data =====
 @st.cache_data(ttl=3600)
@@ -249,6 +280,31 @@ with tabs[0]:
                     '(passive) · **D**: CNH per the fixing-bias gates '
                     '(see run_weekly_all.py for exact sizes)')
 
+    st.subheader('Economic surprise index')
+    esi_cols = [c for c in esi.columns if esi[c].dropna().size > 30]
+    latest = esi[esi_cols].dropna(how='all').iloc[-1]
+    month_ago = esi[esi_cols].dropna(how='all').iloc[-5] \
+        if len(esi.dropna(how='all')) > 5 else latest
+    order_e = [c for c in esi_cols if REGION.get(c, 'Thematic') == 'G10'] + \
+        [c for c in esi_cols if REGION.get(c, 'Thematic') == 'APAC'] + \
+        [c for c in esi_cols if REGION.get(c, 'Thematic') == 'CEEMEA'] + \
+        [c for c in esi_cols if REGION.get(c, 'Thematic') == 'LATAM'] + \
+        [c for c in esi_cols if REGION.get(c) is None]
+    fig_e = go.Figure()
+    fig_e.add_trace(go.Bar(
+        x=order_e, y=[latest.get(c, np.nan) for c in order_e],
+        marker_color=ccy_colors(order_e), name=f'latest ({ASOF.date()})'))
+    fig_e.add_trace(go.Scatter(
+        x=order_e, y=[month_ago.get(c, np.nan) for c in order_e],
+        mode='markers', marker=dict(color='#4dabf7', size=8),
+        name='1 month ago'))
+    fig_e.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10),
+                        legend=dict(orientation='h'), **PLOT_BG)
+    st.plotly_chart(fig_e, use_container_width=True)
+    st.caption('bars colored by region — 🟧 G10 · 🟨 APAC · 🟥 CEEMEA · '
+               '🟪 LATAM · 🟩 thematic — bar = latest weekly ESI, '
+               'dot = one month ago')
+
 
 # ------------------------------------------------ currency deep-dive --------
 with tabs[1]:
@@ -267,7 +323,7 @@ with tabs[1]:
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True,
                                 row_heights=[0.72, 0.28], vertical_spacing=0.04)
             fig.add_trace(go.Scatter(x=px.index, y=px, name=f'USD/{ccy}',
-                                     line=dict(color='#222', width=1.4)), 1, 1)
+                                     line=dict(color='#e6edf3', width=1.4)), 1, 1)
             fig.add_trace(go.Scatter(x=px.index, y=px.rolling(ma_f).mean(),
                                      name=f'MA{ma_f}', line=dict(width=1)), 1, 1)
             fig.add_trace(go.Scatter(x=px.index, y=px.rolling(ma_s).mean(),
@@ -287,7 +343,7 @@ with tabs[1]:
             fig.add_hline(y=70, row=2, col=1, line_dash='dot', line_color='#bbb')
             fig.add_hline(y=30, row=2, col=1, line_dash='dot', line_color='#bbb')
             fig.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10),
-                              legend=dict(orientation='h'))
+                              legend=dict(orientation='h'), **PLOT_BG)
             st.plotly_chart(fig, use_container_width=True)
         st.caption('⚠️ evidence note: every technical here was backtested on '
                    'this universe in 4 roles (standalone, pillar, entry gate, '
@@ -319,7 +375,7 @@ with tabs[1]:
             figd = go.Figure(go.Bar(x=cs.index, y=cs.values,
                                     marker_color=['#2e8f5b' if v >= 0 else '#b7333a'
                                                   for v in cs.values]))
-            figd.update_layout(height=260, yaxis_title='bp (4w)',
+            figd.update_layout(height=260, yaxis_title='bp (4w)', **PLOT_BG,
                                margin=dict(l=10, r=10, t=20, b=10),
                                title=f'{ccy} last-4w total return '
                                      f'{win["y"].iloc[-4:].sum()*1e4:+.0f}bp, '
@@ -471,14 +527,14 @@ with tabs[2]:
         figb.add_trace(go.Scatter(x=bench.index, y=100 * bench.cumsum(),
                                   name='LIVE benchmark',
                                   line=dict(width=1.5, color='#888')))
-        figb.update_layout(height=330, yaxis_title='cumulative %',
+        figb.update_layout(height=330, yaxis_title='cumulative %', **PLOT_BG,
                            margin=dict(l=10, r=10, t=20, b=10))
         st.plotly_chart(figb, use_container_width=True)
         contrib = (Wl * tot_w[Wl.columns]).sum() * 100
         figc = go.Figure(go.Bar(x=contrib.index, y=contrib.values,
                                 marker_color=['#2e8f5b' if v >= 0 else '#b7333a'
                                               for v in contrib.values]))
-        figc.update_layout(height=240, yaxis_title='total contribution %',
+        figc.update_layout(height=240, yaxis_title='total contribution %', **PLOT_BG,
                            margin=dict(l=10, r=10, t=20, b=10))
         st.plotly_chart(figc, use_container_width=True)
 
@@ -511,7 +567,7 @@ The 2-member composite remains the best signal we can defend.
         figm = go.Figure(go.Bar(x=last.index, y=last.values,
                                 marker_color=['#2e8f5b' if v >= 0 else '#b7333a'
                                               for v in last.values]))
-        figm.update_layout(title=f'Ridge predictions, latest week '
+        figm.update_layout(**PLOT_BG, title=f'Ridge predictions, latest week '
                                  f'({S.dropna(how="all").index[-1].date()})',
                            height=300, margin=dict(l=10, r=10, t=40, b=10))
         st.plotly_chart(figm, use_container_width=True)
@@ -527,7 +583,7 @@ The 2-member composite remains the best signal we can defend.
         ics = pd.Series(ics)
         yr = ics.groupby(ics.index.year).mean()
         figy = go.Figure(go.Bar(x=yr.index.astype(str), y=yr.values))
-        figy.update_layout(title='Ridge IC by calendar year', height=260,
+        figy.update_layout(**PLOT_BG, title='Ridge IC by calendar year', height=260,
                            margin=dict(l=10, r=10, t=40, b=10))
         st.plotly_chart(figy, use_container_width=True)
     else:
