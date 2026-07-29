@@ -539,6 +539,12 @@ with tabs[4]:
     st.subheader('News & official data (auto-pulled)')
     try:
         import feedparser
+        # sandboxed/proxied environments: trust the local proxy CA if present
+        # (no effect on a normal machine - the file simply doesn't exist)
+        _ca = '/root/.ccr/ca-bundle.crt'
+        if os.path.exists(_ca):
+            os.environ.setdefault('SSL_CERT_FILE', _ca)
+            os.environ.setdefault('REQUESTS_CA_BUNDLE', _ca)
         sel = st.multiselect('countries', list(CCY_COUNTRY.values()),
                              default=['China', 'Brazil', 'Mexico'])
         n_items = st.slider('headlines per country', 3, 15, 6)
