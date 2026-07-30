@@ -77,6 +77,54 @@ def ccy_colors(seq):
     return [RCOL.get(REGION.get(c, 'Thematic'), '#74b816') for c in seq]
 
 
+@st.cache_data(ttl=3600)
+def fair_value(_L):
+    """Short-term model-implied fair value per currency (weekly).
+
+    Rolling 52w regression of the weekly currency return on observable
+    drivers (2y yield-diff change, CTOT change, DXY return); the misalignment
+    is the 13-week cumulated residual - how far the currency has over/under-
+    shot what its drivers explain this quarter. fair spot = spot * exp(mis):
+    mis > 0 means the currency ran AHEAD of fundamentals (rich), so fair
+    USD/CCY sits ABOVE spot. Descriptive tool - fading it scored IC -0.007
+    on this universe (see strategy_logic.md section 7), so these lines are
+    context for entries, not a signal.
+    """
+    spot_ = _L['L1_spot_usd_traded']
+    ret = -np.log(spot_).diff()
+    ydiff = _L.get('L2_ydiff_2y_vs_us', pd.DataFrame()).reindex(ret.index)
+    ctot_ = _L.get('L1_ctot', pd.DataFrame()).reindex(ret.index)
+    reg_ = _L.get('L1_regime', pd.DataFrame()).reindex(ret.index)
+    dxy = np.log(reg_['DXY']).diff() if 'DXY' in reg_ else \
+        pd.Series(np.nan, index=ret.index)
+    mis = pd.DataFrame(index=ret.index, columns=ret.columns, dtype=float)
+    for c in ret.columns:
+        X = pd.DataFrame({
+            'dyd': ydiff[c].diff() if c in ydiff else np.nan,
+            'ctot': np.log(ctot_[c]).diff() if c in ctot_ else np.nan,
+            'dxy': dxy})
+        dat = pd.concat([ret[c].rename('y'), X], axis=1)
+        resid = pd.Series(index=dat.index, dtype=float)
+        vals = dat[['dyd', 'ctot', 'dxy']].fillna(0.0).values
+        yv = dat['y'].values
+        for i in range(52, len(dat)):
+            if np.isnan(yv[i]):
+                continue
+            sl = slice(i - 52, i)
+            yw = yv[sl]
+            ok = ~np.isnan(yw)
+            if ok.sum() < 30:
+                continue
+            Xw = np.c_[np.ones(ok.sum()), vals[sl][ok]]
+            try:
+                beta = np.linalg.lstsq(Xw, yw[ok], rcond=None)[0]
+            except np.linalg.LinAlgError:
+                continue
+            resid.iloc[i] = yv[i] - np.r_[1, vals[i]] @ beta
+        mis[c] = resid.rolling(13, min_periods=5).sum()
+    return spot_ * np.exp(mis)
+
+
 # ================================================================= data =====
 @st.cache_data(ttl=3600)
 def load_all():
@@ -220,7 +268,8 @@ st.caption(f'data as of **{ASOF.date()}** · 13 tradable EM currencies '
            f'Sharpe 1.51 ± 0.08')
 
 tabs = st.tabs(['🎯 Overview', '💱 Currency deep-dive', '🧪 Backtester',
-                '🤖 ML Lab', '🧭 Drivers & Meta', '📰 News & data'])
+                '🤖 ML Lab', '🧭 Drivers & Meta', '📰 News & data',
+                '📈 All currencies'])
 
 
 # ------------------------------------------------------------ overview -----
@@ -728,3 +777,69 @@ with tabs[5]:
 [MNB](https://www.mnb.hu/en) ·
 [TE calendar](https://tradingeconomics.com/calendar)
 ''')
+
+
+# ------------------------------------------------- all currencies -----------
+with tabs[6]:
+    st.subheader('All currencies - spot, model fair value, technical bounds')
+    st.caption('black = daily USD/CCY spot (2y) · cyan = model-implied '
+               'short-term fair value (rolling 52w driver regression, 13w '
+               'cumulated residual; FV above spot = currency rich vs '
+               'fundamentals) · shaded = Bollinger 20d +-2sd as the technical '
+               'upper/lower bound. FV is context, not a signal: fading it '
+               'scored IC -0.007 on this universe.')
+    lookback = st.slider('lookback (trading days)', 120, 750, 500, 10)
+    FV = fair_value(L)
+    ncol = 3
+    rows_n = (len(TRADED) + ncol - 1) // ncol
+    figg = make_subplots(rows=rows_n, cols=ncol, subplot_titles=TRADED,
+                         vertical_spacing=0.06, horizontal_spacing=0.05)
+    for i, c in enumerate(TRADED):
+        rr, cc_ = i // ncol + 1, i % ncol + 1
+        if spd is None or c not in spd.columns:
+            continue
+        px = spd[c].dropna().iloc[-lookback:]
+        m = px.rolling(20).mean()
+        sdev = px.rolling(20).std()
+        up, dn = m + 2 * sdev, m - 2 * sdev
+        figg.add_trace(go.Scatter(x=px.index, y=up, line=dict(width=0),
+                                  showlegend=False, hoverinfo='skip'), rr, cc_)
+        figg.add_trace(go.Scatter(x=px.index, y=dn, fill='tonexty',
+                                  fillcolor='rgba(120,140,170,0.18)',
+                                  line=dict(width=0), showlegend=False,
+                                  hoverinfo='skip'), rr, cc_)
+        figg.add_trace(go.Scatter(x=px.index, y=px, name=c,
+                                  line=dict(color='#e6edf3', width=1.2),
+                                  showlegend=False), rr, cc_)
+        if c in FV.columns:
+            fv = FV[c].dropna()
+            fv = fv[fv.index >= px.index.min()]
+            figg.add_trace(go.Scatter(x=fv.index, y=fv, name='FV',
+                                      line=dict(color='#00bdf2', width=1.6,
+                                                dash='dot'),
+                                      showlegend=False), rr, cc_)
+    figg.update_layout(height=290 * rows_n, margin=dict(l=10, r=10, t=30, b=10),
+                       **PLOT_BG)
+    figg.update_annotations(font_size=12)
+    st.plotly_chart(figg, use_container_width=True)
+    # rich/cheap summary table
+    rowsr = []
+    for c in TRADED:
+        if c not in FV.columns or spd is None or c not in spd.columns:
+            continue
+        fv = FV[c].dropna()
+        px = spd[c].dropna()
+        if fv.empty or px.empty:
+            continue
+        gap = 100 * np.log(px.iloc[-1] / fv.iloc[-1])
+        rowsr.append({'ccy': c, 'spot': px.iloc[-1], 'fair value': fv.iloc[-1],
+                      'gap %': gap,
+                      'read': ('CCY RICH vs fundamentals' if gap < -0.5 else
+                               'CCY CHEAP vs fundamentals' if gap > 0.5 else
+                               'near fair')})
+    if rowsr:
+        st.dataframe(pd.DataFrame(rowsr).set_index('ccy')
+                     .style.format({'spot': '{:.4g}', 'fair value': '{:.4g}',
+                                    'gap %': '{:+.2f}'}), height=350)
+        st.caption('gap = log(spot/FV): spot BELOW fair value (gap<0) means '
+                   'the currency has appreciated past its drivers = rich.')
