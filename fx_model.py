@@ -837,6 +837,8 @@ def order_sheet(T, S):
                   f'{100*v*ld*RISK["D"]:+.1f}% of book   (1W forward)')
     print('=' * W78)
     print('Roll: A per-name tenor above; B monthly, all legs together; D weekly.')
+    print('ALL legs cash-settled (NDF/CSF) incl. EUR/JPY/CAD funding - roll BEFORE')
+    print('each leg\'s fixing date; G10 legs fix WM/Refinitiv 4pm London.')
     print('Sizes are % of total book notional at a 5% vol target per sleeve.')
 
 
