@@ -48,8 +48,9 @@ ISO3 = {'CNH': 'CHN', 'IDR': 'IDN', 'INR': 'IND', 'KRW': 'KOR', 'PHP': 'PHL',
 
 
 def curl(url, headers=None):
-    cmd = ['curl', '-sS', '--max-time', '90', '-G' if '$' in url else '-L',
-           '-H', 'User-Agent: Mozilla/5.0']       # Yahoo rejects bare curl
+    cmd = ['curl', '-sS', '--max-time', '90', '-G' if '$' in url else '-L']
+    if 'yahoo' in url:                 # Yahoo rejects bare curl; FRED
+        cmd += ['-H', 'User-Agent: Mozilla/5.0']   # rejects the browser UA
     if os.path.exists(CA):
         cmd += ['--cacert', CA]
     for h in headers or []:
@@ -288,8 +289,31 @@ def fetch_equity():
         save(pd.DataFrame(out).sort_index(), 'yahoo_equity_close_d')
 
 
+def fetch_fxspot():
+    """BACKUP daily spot (Yahoo FX was audited and rejected: weekly return
+    corr vs two agreeing professional sources only 0.5-0.9, TWD 0.5, no CNH
+    history). FRED H.10 agrees with the Citi workbook at 0.94-0.98 weekly -
+    use it to cross-check the primary data, 8 of 13 currencies, 2-3d lag."""
+    ids = {'CNH': 'DEXCHUS', 'INR': 'DEXINUS', 'KRW': 'DEXKOUS',
+           'SGD': 'DEXSIUS', 'THB': 'DEXTHUS', 'TWD': 'DEXTAUS',
+           'BRL': 'DEXBZUS', 'MXN': 'DEXMXUS'}
+    out = {}
+    for c, sid in ids.items():
+        try:
+            txt = curl(f'https://fred.stlouisfed.org/graph/fredgraph.csv'
+                       f'?id={sid}').decode()
+            df = pd.read_csv(io.StringIO(txt))
+            df.columns = ['date', c]
+            df['date'] = pd.to_datetime(df['date'])
+            out[c] = pd.to_numeric(df.set_index('date')[c], errors='coerce')
+        except Exception as e:
+            print(f'  skip {c}: {str(e)[:50]}')
+    if out:
+        save(pd.DataFrame(out).dropna(how='all'), 'fred_h10_spot_backup_d')
+
+
 GROUPS = {'cftc': fetch_cftc, 'bis': fetch_bis, 'fred': fetch_fred,
-          'imf': fetch_imf, 'equity': fetch_equity}
+          'imf': fetch_imf, 'equity': fetch_equity, 'fxspot': fetch_fxspot}
 
 
 def main():
