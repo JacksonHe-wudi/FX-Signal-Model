@@ -1920,12 +1920,11 @@ def run_dashboard():
  # ------------------------------------------------- all currencies -----------
  with tabs[6]:
      st.subheader('All currencies - spot, model fair value, technical bounds')
-     st.caption('black = daily USD/CCY spot (2y) · cyan = model-implied '
+     st.caption('four lines per panel: white = daily USD/CCY spot · yellow dashed = technical upper band · magenta dashed = technical lower band · cyan dotted = model-implied '
                 'short-term fair value (rolling 52w driver regression, 13w '
                 'cumulated residual; FV above spot = currency rich vs '
-                'fundamentals) · shaded = Bollinger 20d +-2sd as the technical '
-                'upper/lower bound. FV is context, not a signal: fading it '
-                'scored IC -0.007 on this universe.')
+                'fundamentals). Bands are Bollinger 20d +-2sd. FV is context, '
+                'not a signal: fading it scored IC -0.007 on this universe.')
      lookback = st.slider('lookback (trading days)', 120, 750, 500, 10)
      FV = fair_value(L)
      ncol = 3
@@ -1940,24 +1939,28 @@ def run_dashboard():
          m = px.rolling(20).mean()
          sdev = px.rolling(20).std()
          up, dn = m + 2 * sdev, m - 2 * sdev
-         figg.add_trace(go.Scatter(x=px.index, y=up, line=dict(width=0),
-                                   showlegend=False, hoverinfo='skip'), rr, cc_)
-         figg.add_trace(go.Scatter(x=px.index, y=dn, fill='tonexty',
-                                   fillcolor='rgba(120,140,170,0.18)',
-                                   line=dict(width=0), showlegend=False,
-                                   hoverinfo='skip'), rr, cc_)
-         figg.add_trace(go.Scatter(x=px.index, y=px, name=c,
-                                   line=dict(color='#e6edf3', width=1.2),
-                                   showlegend=False), rr, cc_)
+         leg = (i == 0)                    # one legend for the whole grid
+         figg.add_trace(go.Scatter(x=px.index, y=up, name='upper band (BB 2sd)',
+                                   line=dict(color='#f2c500', width=1.0,
+                                             dash='dash'),
+                                   legendgroup='up', showlegend=leg), rr, cc_)
+         figg.add_trace(go.Scatter(x=px.index, y=dn, name='lower band (BB 2sd)',
+                                   line=dict(color='#d6336c', width=1.0,
+                                             dash='dash'),
+                                   legendgroup='dn', showlegend=leg), rr, cc_)
+         figg.add_trace(go.Scatter(x=px.index, y=px, name='spot',
+                                   line=dict(color='#e6edf3', width=1.3),
+                                   legendgroup='sp', showlegend=leg), rr, cc_)
          if c in FV.columns:
              fv = FV[c].dropna()
              fv = fv[fv.index >= px.index.min()]
-             figg.add_trace(go.Scatter(x=fv.index, y=fv, name='FV',
+             figg.add_trace(go.Scatter(x=fv.index, y=fv,
+                                       name='short-term fair value',
                                        line=dict(color='#00bdf2', width=1.6,
                                                  dash='dot'),
-                                       showlegend=False), rr, cc_)
-     figg.update_layout(height=290 * rows_n, margin=dict(l=10, r=10, t=30, b=10),
-                        **PLOT_BG)
+                                       legendgroup='fv', showlegend=leg), rr, cc_)
+     figg.update_layout(height=290 * rows_n, margin=dict(l=10, r=10, t=50, b=10),
+                        legend=dict(orientation='h', y=1.03), **PLOT_BG)
      figg.update_annotations(font_size=12)
      st.plotly_chart(figg, use_container_width=True)
      # rich/cheap summary table
