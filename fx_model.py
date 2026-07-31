@@ -845,6 +845,19 @@ def order_sheet(T, S):
 
 # ============================================================== 7. CLI ======
 
+def bundle_from_clean(dirpath='data/clean/clean_csv'):
+    """The 8-table bundle the backtest consumes, read from the full-pipeline
+    output so the workbook is only parsed once."""
+    def L(n):
+        return pd.read_csv(os.path.join(dirpath, n + '.csv'),
+                           index_col=0, parse_dates=True)
+    return {'spot': L('L1_spot_usd_all30'), 'carry': L('L1_carry_1m_ann'),
+            'rvol': L('L1_vol_realized_1m'), 'atm': L('L1_vol_implied_atm_1m'),
+            'esi': L('L1_esi'), 'fwd_1w': L('L1_fwd_pts_1w'),
+            'fwd_1m': L('L1_fwd_pts_1m'),
+            'fix': L('L1_country_factors')[['CNY_FIX', 'BBG_CNY_FIX']]}
+
+
 def _find_workbook():
     """No path given: look for the workbook next to where you run the script
     (and next to the script itself). Prefers FX_Model_Data*.xlsx, ignores
@@ -888,6 +901,17 @@ def main():
     if a.clean and os.path.exists(a.clean):
         T = load_clean(a.clean)
         print(f'loaded clean data from {a.clean}')
+    elif '_PIPE' in globals():
+        # full pipeline: parses the workbook once, writes ALL tables the
+        # dashboard needs (data/clean/clean_csv, 58 tables + pretty workbook),
+        # then feeds the backtest from the same output
+        print(f'running full pipeline on {a.xlsx} ...')
+        L1, L2, notes = _PIPE['build'](a.xlsx, 'data/clean')
+        _PIPE['write_outputs']('data/clean', L1, L2, notes)
+        T = bundle_from_clean()
+        p = a.clean or os.path.join(a.outdir, 'clean.csv.gz')
+        save_clean(T, p)
+        print('pipeline complete - dashboard data ready under data/clean/')
     else:
         print(f'reading {a.xlsx} ...')
         T = clean(a.xlsx)
