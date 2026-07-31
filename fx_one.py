@@ -3,7 +3,9 @@
 FX ONE - the whole system in a single file.
 
   MODEL / BACKTEST (CLI)
-    python3 fx_one.py FX_Model_Data.xlsx --outdir out     # clean + backtest
+    python3 fx_one.py                                     # auto-finds the
+                                                          # .xlsx in this folder
+    python3 fx_one.py FX_Model_Data.xlsx --outdir out     # or explicit path
     python3 fx_one.py --clean out/clean.csv.gz            # re-run w/o xlsx
     python3 fx_one.py fetch [cftc bis fred imf equity]    # refresh free
                                                           # external data
@@ -811,6 +813,24 @@ def order_sheet(T, S):
 
 
 # ============================================================== 7. CLI ======
+
+def _find_workbook():
+    """No path given: look for the workbook next to where you run the script
+    (and next to the script itself). Prefers FX_Model_Data*.xlsx, ignores
+    Excel lock files (~$...), picks the most recently modified match."""
+    import glob as _g
+    here = os.path.dirname(os.path.abspath(__file__))
+    dirs = ['.', here] if os.path.abspath('.') != here else ['.']
+    for pat in ('FX_Model_Data*.xlsx', 'FX_Model*.xlsx', '*.xlsx'):
+        cands = []
+        for d in dirs:
+            cands += [p for p in _g.glob(os.path.join(d, pat))
+                      if not os.path.basename(p).startswith('~$')]
+        if cands:
+            return max(cands, key=os.path.getmtime)
+    return None
+
+
 def cli_main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n')[1])
     ap.add_argument('xlsx', nargs='?', help='path to FX_Model_Data.xlsx')
@@ -822,7 +842,16 @@ def cli_main():
                          '(0 to skip)')
     a = ap.parse_args()
     if not a.xlsx and not a.clean:
-        ap.error('give either the workbook path or --clean <file>')
+        wb = _find_workbook()
+        if wb:
+            a.xlsx = wb
+            print(f'auto-detected workbook: {wb}')
+        elif os.path.exists(os.path.join(a.outdir, 'clean.csv.gz')):
+            a.clean = os.path.join(a.outdir, 'clean.csv.gz')
+            print(f'no workbook found - using cached {a.clean}')
+        else:
+            ap.error('no .xlsx found in this folder - put FX_Model_Data.xlsx '
+                     'next to this script, or pass a path / --clean <file>')
     os.makedirs(a.outdir, exist_ok=True)
 
     if a.clean and os.path.exists(a.clean):
