@@ -906,7 +906,7 @@ def main():
         # dashboard needs (data/clean/clean_csv, 58 tables + pretty workbook),
         # then feeds the backtest from the same output
         print(f'running full pipeline on {a.xlsx} ...')
-        L1, L2, notes = _PIPE['build'](a.xlsx, 'data/clean')
+        _wb, L1, L2, notes, _ca, _sanity = _PIPE['build'](a.xlsx, 'data/clean')
         _PIPE['write_outputs']('data/clean', L1, L2, notes)
         T = bundle_from_clean()
         p = a.clean or os.path.join(a.outdir, 'clean.csv.gz')
