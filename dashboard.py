@@ -543,7 +543,7 @@ with tabs[2]:
                           parse_dates=True) if \
             os.path.exists('analysis/stfv_misalignment.csv') else None
         if mis is None:
-            st.warning('run the STFV precompute first (see repo)')
+            st.warning('run: python3 fx_one.py research')
         else:
             score = -mis.reindex(columns=TRADED).rolling(2).mean()
         note = 'rolling 52w return regression on rate-diff/ToT/DXY drivers; ' \
@@ -559,7 +559,7 @@ with tabs[2]:
                    'evidence: IC +0.032 (t 2.3) but book +0.11 vs live 1.30 ' \
                    'on the same weeks - significant IC, no book value'
         else:
-            st.warning('run ml_factor.py first')
+            st.warning('run: python3 fx_one.py research')
 
     if score is not None and len(uni) >= 4:
         r, Wl = run_xs_book(score, cost_bp=cost, universe=uni)
@@ -634,7 +634,7 @@ The 2-member composite remains the best signal we can defend.
                            margin=dict(l=10, r=10, t=40, b=10))
         st.plotly_chart(figy, use_container_width=True)
     else:
-        st.warning('run `python3 ml_factor.py` to populate this tab')
+        st.warning('run: python3 fx_one.py research')
 
 
 # ------------------------------------------------- drivers & meta -----------
@@ -645,7 +645,7 @@ with tabs[4]:
         st.caption('PCA on standardized weekly returns. PC1 = the dollar/EM '
                    'factor (corr 0.97 with the EM basket, 0.70 with DXY); '
                    'PC2 = carry / LATAM-vs-APAC factor; PC3 = residual LATAM '
-                   'beta. Run `python3 pca_drivers.py` to refresh.')
+                   'beta. Refresh with: python3 fx_one.py research')
         try:
             vd = pd.read_csv('analysis/pca_var_decomp.csv', header=[0, 1],
                              index_col=0)['roll104'] * 100
@@ -670,7 +670,7 @@ with tabs[4]:
                 f' ({vd.loc[c, dom[c]]:.0f}%)'
                 for c in vd.index))
         except FileNotFoundError:
-            st.warning('run `python3 pca_drivers.py` first')
+            st.warning('run: python3 fx_one.py research')
     with d2:
         st.subheader('Strategy leaderboard - trailing 12m')
         st.caption('Sharpe of each library strategy, last 52 weeks vs full '
@@ -691,7 +691,7 @@ with tabs[4]:
                          .background_gradient(cmap='RdYlGn', vmin=-1, vmax=2),
                          height=290)
         except FileNotFoundError:
-            st.warning('run `python3 pca_drivers.py` first')
+            st.warning('run: python3 fx_one.py research')
 
     st.subheader('Auto-selection backtest - does chasing the best 12m Sharpe work?')
     try:
@@ -729,7 +729,7 @@ with tabs[4]:
                                 **PLOT_BG)
             st.plotly_chart(figm2, use_container_width=True)
     except FileNotFoundError:
-        st.warning('run `python3 pca_drivers.py` first')
+        st.warning('run: python3 fx_one.py research')
 
 
 # ------------------------------------------------------------- news ---------
