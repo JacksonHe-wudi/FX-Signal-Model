@@ -2286,8 +2286,7 @@ def run_dashboard():
                 'MXN': 'Mexico', 'CLP': 'Chile', 'PLN': 'Poland',
                 'HUF': 'Hungary', 'MYR': 'Malaysia'}
 
- st.set_page_config(page_title='FX Model Dashboard', page_icon='🌏',
-                    layout='wide')
+ st.set_page_config(page_title='FX Model Dashboard', layout='wide')
 
  # ---- Citi-Velocity-inspired look: dark navy, cyan accent, spaced uppercase
  # section headers, region-coded categorical colors ----
@@ -2505,15 +2504,15 @@ def run_dashboard():
 
 
  # ============================================================ layout ========
- st.title('🌏 FX Model — all-in-one dashboard')
- st.caption(f'data as of **{ASOF.date()}** · 13 tradable EM currencies '
-            f'(MYR excluded) · weekly Friday grid · '
+ st.title('FX MODEL - ALL-IN-ONE DASHBOARD')
+ st.caption(f'data as of **{ASOF.date()}** | 13 tradable EM currencies '
+            f'(MYR excluded) | weekly Friday grid | '
             f'live book = A(RV) 50% + B(EM beta) 25% + D(CNH fix) 25%, '
-            f'Sharpe 1.51 ± 0.08')
+            f'Sharpe 1.51 +/- 0.08')
 
- tabs = st.tabs(['🎯 Overview', '💱 Currency deep-dive', '🧪 Backtester',
-                 '🤖 ML Lab', '🧭 Drivers & Meta', '📰 News & data',
-                 '📈 All currencies'])
+ tabs = st.tabs(['Overview', 'Currency deep-dive', 'Backtester',
+                 'ML Lab', 'Drivers & Meta', 'News & data',
+                 'All currencies'])
 
 
  # ------------------------------------------------------------ overview -----
@@ -2542,15 +2541,15 @@ def run_dashboard():
                      tq = float(np.sign(px.rolling(50).mean().iloc[-1]
                                         - px.rolling(200).mean().iloc[-1]))
              if pd.isna(fz) or abs(fz) <= 0.5:
-                 verdict = '— no edge'
+                 verdict = '- no edge'
              else:
                  side = 'LONG' if fz > 0 else 'SHORT'
                  agree = (tq == np.sign(fz)) if not pd.isna(tq) else None
-                 verdict = f'{"🟢" if agree else "🟡"} {side}' + \
+                 verdict = f'{"[GO]" if agree else "[!]"} {side}' + \
                      ('' if agree in (True, None) else ' (T disagrees)')
              rows.append({'ccy': c, 'F composite z': fz,
                           'S percentile': sq,
-                          'T trend': {1.0: 'up', -1.0: 'down'}.get(tq, '—'),
+                          'T trend': {1.0: 'up', -1.0: 'down'}.get(tq, '-'),
                           'verdict': verdict})
          df_v = pd.DataFrame(rows).set_index('ccy')
          st.dataframe(df_v.style.format({'F composite z': '{:+.2f}',
@@ -2570,7 +2569,7 @@ def run_dashboard():
                       .style.format('{:+.2f}').bar(align='mid',
                                                    color=['#b7333a', '#2e8f5b']))
          st.markdown('**B**: long equal-vol EM basket vs 50% CAD + 50% G3 '
-                     '(passive) · **D**: CNH per the fixing-bias gates '
+                     '(passive) | **D**: CNH per the fixing-bias gates '
                      '(see run_weekly_all.py for exact sizes)')
 
      st.subheader('Economic surprise index')
@@ -2594,9 +2593,8 @@ def run_dashboard():
      fig_e.update_layout(height=320, margin=dict(l=10, r=10, t=10, b=10),
                          legend=dict(orientation='h'), **PLOT_BG)
      st.plotly_chart(fig_e, use_container_width=True)
-     st.caption('bars colored by region — 🟧 G10 · 🟨 APAC · 🟥 CEEMEA · '
-                '🟪 LATAM · 🟩 thematic — bar = latest weekly ESI, '
-                'dot = one month ago')
+     st.caption('regions: G10=orange, APAC=yellow, CEEMEA=magenta, LATAM=purple, '
+                'thematic=green. bar = latest weekly ESI, dot = one month ago')
 
 
  # ------------------------------------------------ currency deep-dive --------
@@ -2605,7 +2603,7 @@ def run_dashboard():
      cc1, cc2 = st.columns([3, 2])
 
      with cc1:
-         st.subheader(f'USD/{ccy} — price & technicals (adjustable)')
+         st.subheader(f'USD/{ccy} - price & technicals (adjustable)')
          tc1, tc2, tc3, tc4 = st.columns(4)
          ma_f = tc1.number_input('fast MA (d)', 10, 100, 50, 5)
          ma_s = tc2.number_input('slow MA (d)', 50, 300, 200, 10)
@@ -2638,10 +2636,10 @@ def run_dashboard():
              fig.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10),
                                legend=dict(orientation='h'), **PLOT_BG)
              st.plotly_chart(fig, use_container_width=True)
-         st.caption('⚠️ evidence note: every technical here was backtested on '
+         st.caption('EVIDENCE NOTE: every technical here was backtested on '
                     'this universe in 4 roles (standalone, pillar, entry gate, '
-                    'TSMOM sleeve) and none added to the book — treat these as '
-                    'descriptive, not predictive. See docs/strategy_logic.md §7.')
+                    'TSMOM sleeve) and none added to the book - treat these as '
+                    'descriptive, not predictive. See docs/strategy_logic.md sec.7.')
 
          st.subheader('What drove the last month')
          drv = pd.DataFrame({
@@ -2676,7 +2674,7 @@ def run_dashboard():
              st.plotly_chart(figd, use_container_width=True)
 
      with cc2:
-         st.subheader('Fundamental — supportive or not?')
+         st.subheader('Fundamental - supportive or not?')
          st.caption('percentile = current value within its own 5y history. '
                     '"supportive" = sign(current cross-sectional z) x sign of '
                     'the factor\'s historically measured IC on this universe.')
@@ -2688,9 +2686,9 @@ def run_dashboard():
              if len(s) < 30:
                  continue
              z_now = zsec(pan).loc[s.index[-1], ccy] if len(pan) else np.nan
-             sup = '—'
+             sup = '-'
              if abs(ic) >= 0.015 and not pd.isna(z_now):
-                 sup = '✅ yes' if np.sign(z_now) * np.sign(ic) > 0 else '❌ against'
+                 sup = 'YES' if np.sign(z_now) * np.sign(ic) > 0 else 'AGAINST'
              rows.append({'factor': nm, 'value': s.iloc[-1],
                           '5y %ile': pctile(s), 'XS z': z_now,
                           'hist IC': ic, 'supportive': sup, 'status': note})
@@ -2699,7 +2697,7 @@ def run_dashboard():
                                      'XS z': '{:+.2f}', 'hist IC': '{:+.3f}'}),
                       height=330)
 
-         st.subheader('Sentiment — percentile now')
+         st.subheader('Sentiment - percentile now')
          for nm, pan in SENTIMENT.items():
              if ccy not in pan.columns:
                  continue
@@ -2709,8 +2707,8 @@ def run_dashboard():
              p = pctile(s)
              st.progress(min(max(p / 100, 0.0), 1.0),
                          text=f'{nm}: {s.iloc[-1]:+.2f}  ({p:.0f}th pct of 5y)')
-         st.caption('⚠️ evidence note: options-based sentiment was tested '
-                    'cross-sectionally (RR z IC −0.014, VRP −0.022) — '
+         st.caption('EVIDENCE NOTE: options-based sentiment was tested '
+                    'cross-sectionally (RR z IC -0.014, VRP -0.022) - '
                     'informative for CONTEXT and risk, not a ranking signal. '
                     'The only sentiment signal that survived testing is the '
                     'CNH fixing bias (sleeve D).')
@@ -2812,7 +2810,7 @@ def run_dashboard():
          bench, _ = run_xs_book(COMP, cost_bp=cost, universe=uni)
          stt = pd.DataFrame({'selected': stats_row(r),
                              'LIVE benchmark': stats_row(bench)}).T
-         st.info(f'📖 {note}')
+         st.info(note)
          st.dataframe(stt.style.format('{:+.2f}'))
          figb = go.Figure()
          figb.add_trace(go.Scatter(x=r.index, y=100 * r.cumsum(),
@@ -2834,21 +2832,21 @@ def run_dashboard():
 
  # ------------------------------------------------------------- ML lab -------
  with tabs[3]:
-     st.subheader('ML Lab — walk-forward multi-factor (honest results)')
+     st.subheader('ML Lab - walk-forward multi-factor (honest results)')
      st.markdown('''
- Method: **Taylor–Filippou–Rapach–Zhou (CEPR DP15305)** — country
+ Method: **Taylor-Filippou-Rapach-Zhou (CEPR DP15305)** - country
  characteristics *interacted with global financial conditions*, regularized
  models, strict expanding walk-forward (first prediction after 3y of training,
  refit every 26 weeks, nothing sees the future).
 
  | model | walk-forward IC | book Sharpe | live composite (same weeks) |
  |---|---|---|---|
- | Ridge (α=10), 22 features | **+0.032 (t 2.25)** | +0.11 | **+1.30** |
- | HistGradientBoosting d3 | −0.005 (t −0.35) | −0.21 | +1.30 |
+ | Ridge (alpha=10), 22 features | **+0.032 (t 2.25)** | +0.11 | **+1.30** |
+ | HistGradientBoosting d3 | -0.005 (t -0.35) | -0.21 | +1.30 |
 
- **Read this honestly:** the ridge IC is statistically real — the interactions
- do carry some information — but it does not survive the book's discretization,
- and the tree model overfits outright. 13 currencies × ~550 training weeks is
+ **Read this honestly:** the ridge IC is statistically real - the interactions
+ do carry some information - but it does not survive the book's discretization,
+ and the tree model overfits outright. 13 currencies x ~550 training weeks is
  two orders of magnitude less data than the settings where ML famously works.
  The 2-member composite remains the best signal we can defend.
  ''')
@@ -2911,14 +2909,14 @@ def run_dashboard():
                                 margin=dict(l=10, r=10, t=10, b=10), **PLOT_BG)
              st.plotly_chart(figp, use_container_width=True)
              dom = vd[['PC1', 'PC2', 'PC3', 'idio']].idxmax(axis=1)
-             st.caption('dominant driver now: ' + ' · '.join(
+             st.caption('dominant driver now: ' + ' | '.join(
                  f'**{c}** {comp_names[dom[c]].split(" /")[0]}'
                  f' ({vd.loc[c, dom[c]]:.0f}%)'
                  for c in vd.index))
          except FileNotFoundError:
              st.warning('run `python3 pca_drivers.py` first')
      with d2:
-         st.subheader('Strategy leaderboard — trailing 12m')
+         st.subheader('Strategy leaderboard - trailing 12m')
          st.caption('Sharpe of each library strategy, last 52 weeks vs full '
                     'sample. The tempting move is to switch into whatever is '
                     'hot - see the verdict below before doing that.')
@@ -2939,7 +2937,7 @@ def run_dashboard():
          except FileNotFoundError:
              st.warning('run `python3 pca_drivers.py` first')
 
-     st.subheader('Auto-selection backtest — does chasing the best 12m Sharpe work?')
+     st.subheader('Auto-selection backtest - does chasing the best 12m Sharpe work?')
      try:
          M = pd.read_csv('analysis/meta_selector.csv', index_col=0,
                          parse_dates=True)
@@ -3011,14 +3009,14 @@ def run_dashboard():
      st.markdown('''
  ---
  **Official data quick links** (weekly ritual):
- [PBOC fix](http://www.pbc.gov.cn/en/) ·
- [BSP](https://www.bsp.gov.ph/) · [BOT](https://www.bot.or.th/en/) ·
- [BI](https://www.bi.go.id/en/) · [RBI](https://www.rbi.org.in/) ·
- [BOK](https://www.bok.or.kr/eng/) · [CBC Taiwan](https://www.cbc.gov.tw/en/) ·
- [MAS](https://www.mas.gov.sg/) · [BCB](https://www.bcb.gov.br/en) ·
- [Banxico](https://www.banxico.org.mx/indexen.html) ·
- [BCCh](https://www.bcentral.cl/en/) · [NBP](https://nbp.pl/en/) ·
- [MNB](https://www.mnb.hu/en) ·
+ [PBOC fix](http://www.pbc.gov.cn/en/) |
+ [BSP](https://www.bsp.gov.ph/) | [BOT](https://www.bot.or.th/en/) |
+ [BI](https://www.bi.go.id/en/) | [RBI](https://www.rbi.org.in/) |
+ [BOK](https://www.bok.or.kr/eng/) | [CBC Taiwan](https://www.cbc.gov.tw/en/) |
+ [MAS](https://www.mas.gov.sg/) | [BCB](https://www.bcb.gov.br/en) |
+ [Banxico](https://www.banxico.org.mx/indexen.html) |
+ [BCCh](https://www.bcentral.cl/en/) | [NBP](https://nbp.pl/en/) |
+ [MNB](https://www.mnb.hu/en) |
  [TE calendar](https://tradingeconomics.com/calendar)
  ''')
 
@@ -3026,7 +3024,7 @@ def run_dashboard():
  # ------------------------------------------------- all currencies -----------
  with tabs[6]:
      st.subheader('All currencies - spot, model fair value, technical bounds')
-     st.caption('four lines per panel: white = daily USD/CCY spot · yellow dashed = technical upper band · magenta dashed = technical lower band · cyan dotted = model-implied '
+     st.caption('four lines per panel: white = daily USD/CCY spot | yellow dashed = technical upper band | magenta dashed = technical lower band | cyan dotted = model-implied '
                 'short-term fair value (rolling 52w driver regression, 13w '
                 'cumulated residual; FV above spot = currency rich vs '
                 'fundamentals). Bands are Bollinger 20d +-2sd. FV is context, '
