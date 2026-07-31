@@ -102,7 +102,7 @@ def fair_value(_L):
             'dyd': ydiff[c].diff() if c in ydiff else np.nan,
             'ctot': np.log(ctot_[c]).diff() if c in ctot_ else np.nan,
             'dxy': dxy})
-        dat = pd.concat([ret[c].rename('y'), X], axis=1)
+        dat = pd.concat([ret[c].rename('y'), X], axis=1, sort=True)
         resid = pd.Series(index=dat.index, dtype=float)
         vals = dat[['dyd', 'ctot', 'dxy']].fillna(0.0).values
         yv = dat['y'].values
@@ -407,7 +407,7 @@ with tabs[1]:
             if 'L1_regime' in L else np.nan,
         }).reindex(tot_w.index)
         y = tot_w[ccy]
-        win = pd.concat([y.rename('y'), drv], axis=1).dropna().iloc[-104:]
+        win = pd.concat([y.rename('y'), drv], axis=1, sort=True).dropna().iloc[-104:]
         if len(win) > 40:
             X = np.c_[np.ones(len(win)), win.iloc[:, 1:].values]
             beta = np.linalg.lstsq(X, win['y'].values, rcond=None)[0]

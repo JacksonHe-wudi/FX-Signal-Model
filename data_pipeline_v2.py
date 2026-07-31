@@ -625,7 +625,7 @@ def build(xlsx_path, outdir):
     for ccy in cmap2:
         a = L1['carry_1m_ann'][ccy] if ccy in L1['carry_1m_ann'].columns else pd.Series(dtype=float)
         b = citi_carry[ccy]
-        j = pd.concat([a.rename('recon'), b.rename('citi')], axis=1).dropna()
+        j = pd.concat([a.rename('recon'), b.rename('citi')], axis=1, sort=True).dropna()
         corr = j['recon'].corr(j['citi']) if len(j) > 20 else float('nan')
         sanity.append((ccy, len(j), round(corr, 3)))
 

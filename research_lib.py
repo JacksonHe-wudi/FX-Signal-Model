@@ -39,7 +39,7 @@ def research_stfv(T):
     for c in TRADED:
         dat = pd.concat([ret[c].rename('y'), dyd[c].rename('dyd'),
                          ctot[c].diff().rename('ctot'), dxy.rename('dxy')],
-                        axis=1)
+                        axis=1, sort=True)
         resid = pd.Series(index=dat.index, dtype=float)
         vals = dat[['dyd', 'ctot', 'dxy']].fillna(0.0).values
         yv = dat['y'].values
@@ -156,7 +156,7 @@ def research_ml(T):
                        l2_regularization=1.0, random_state=0))]:
         print(f'  walk-forward {nm} ...')
         out[nm] = walk_forward(fn)
-    pd.concat(out, axis=1).to_csv('analysis/ml_predictions.csv')
+    pd.concat(out, axis=1, sort=True).to_csv('analysis/ml_predictions.csv')
     print('  ok analysis/ml_predictions.csv')
 
 
@@ -207,7 +207,7 @@ def research_pca_meta(T):
     vd_r = var_decomp(std.iloc[-104:], scores_r)
     load_f.to_csv('analysis/pca_loadings_full.csv')
     load_r.to_csv('analysis/pca_loadings_roll.csv')
-    pd.concat({'full': vd_f, 'roll104': vd_r}, axis=1) \
+    pd.concat({'full': vd_f, 'roll104': vd_r}, axis=1, sort=False) \
         .to_csv('analysis/pca_var_decomp.csv')
     print('  ok analysis/pca_*.csv')
 

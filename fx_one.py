@@ -1591,7 +1591,7 @@ def _pipeline_ns():
      for ccy in cmap2:
          a = L1['carry_1m_ann'][ccy] if ccy in L1['carry_1m_ann'].columns else pd.Series(dtype=float)
          b = citi_carry[ccy]
-         j = pd.concat([a.rename('recon'), b.rename('citi')], axis=1).dropna()
+         j = pd.concat([a.rename('recon'), b.rename('citi')], axis=1, sort=True).dropna()
          corr = j['recon'].corr(j['citi']) if len(j) > 20 else float('nan')
          sanity.append((ccy, len(j), round(corr, 3)))
 
@@ -2291,7 +2291,7 @@ def research_stfv(T):
     for c in TRADED:
         dat = pd.concat([ret[c].rename('y'), dyd[c].rename('dyd'),
                          ctot[c].diff().rename('ctot'), dxy.rename('dxy')],
-                        axis=1)
+                        axis=1, sort=True)
         resid = pd.Series(index=dat.index, dtype=float)
         vals = dat[['dyd', 'ctot', 'dxy']].fillna(0.0).values
         yv = dat['y'].values
@@ -2408,7 +2408,7 @@ def research_ml(T):
                        l2_regularization=1.0, random_state=0))]:
         print(f'  walk-forward {nm} ...')
         out[nm] = walk_forward(fn)
-    pd.concat(out, axis=1).to_csv('analysis/ml_predictions.csv')
+    pd.concat(out, axis=1, sort=True).to_csv('analysis/ml_predictions.csv')
     print('  ok analysis/ml_predictions.csv')
 
 
@@ -2459,7 +2459,7 @@ def research_pca_meta(T):
     vd_r = var_decomp(std.iloc[-104:], scores_r)
     load_f.to_csv('analysis/pca_loadings_full.csv')
     load_r.to_csv('analysis/pca_loadings_roll.csv')
-    pd.concat({'full': vd_f, 'roll104': vd_r}, axis=1) \
+    pd.concat({'full': vd_f, 'roll104': vd_r}, axis=1, sort=False) \
         .to_csv('analysis/pca_var_decomp.csv')
     print('  ok analysis/pca_*.csv')
 
@@ -2622,7 +2622,7 @@ def run_dashboard():
              'dyd': ydiff[c].diff() if c in ydiff else np.nan,
              'ctot': np.log(ctot_[c]).diff() if c in ctot_ else np.nan,
              'dxy': dxy})
-         dat = pd.concat([ret[c].rename('y'), X], axis=1)
+         dat = pd.concat([ret[c].rename('y'), X], axis=1, sort=True)
          resid = pd.Series(index=dat.index, dtype=float)
          vals = dat[['dyd', 'ctot', 'dxy']].fillna(0.0).values
          yv = dat['y'].values
@@ -2927,7 +2927,7 @@ def run_dashboard():
              if 'L1_regime' in L else np.nan,
          }).reindex(tot_w.index)
          y = tot_w[ccy]
-         win = pd.concat([y.rename('y'), drv], axis=1).dropna().iloc[-104:]
+         win = pd.concat([y.rename('y'), drv], axis=1, sort=True).dropna().iloc[-104:]
          if len(win) > 40:
              X = np.c_[np.ones(len(win)), win.iloc[:, 1:].values]
              beta = np.linalg.lstsq(X, win['y'].values, rcond=None)[0]
