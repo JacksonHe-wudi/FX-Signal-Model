@@ -2990,20 +2990,47 @@ def run_dashboard():
          sel = st.multiselect('countries', list(CCY_COUNTRY.values()),
                               default=['China', 'Brazil', 'Mexico'])
          n_items = st.slider('headlines per country', 3, 15, 6)
+         src = st.radio('news source', ['Google News', 'Bing News'],
+                        horizontal=True,
+                        help='corporate networks and some regions block '
+                             'Google - switch to Bing if a country shows '
+                             'no headlines')
+
+         @st.cache_data(ttl=900, show_spinner=False)
+         def _fetch_feed(url):
+             import urllib.request
+             import socket
+             socket.setdefaulttimeout(15)
+             try:
+                 req = urllib.request.Request(
+                     url, headers={'User-Agent': 'Mozilla/5.0'})
+                 raw = urllib.request.urlopen(req).read()
+                 f = feedparser.parse(raw)
+                 return f.entries, None
+             except Exception as ex:
+                 return [], f'{type(ex).__name__}: {ex}'
+
          for country in sel:
              st.markdown(f'#### {country}')
              q = country.replace(' ', '+') + '+currency+central+bank'
-             url = (f'https://news.google.com/rss/search?q={q}'
-                    '&hl=en-US&gl=US&ceid=US:en')
-             try:
-                 feed = feedparser.parse(url)
-                 for e in feed.entries[:n_items]:
-                     ts = getattr(e, 'published', '')[:16]
-                     st.markdown(f'- [{e.title}]({e.link})  \n'
-                                 f'  <span style="color:#888;font-size:0.8em">'
-                                 f'{ts}</span>', unsafe_allow_html=True)
-             except Exception as ex:
-                 st.warning(f'feed failed: {ex}')
+             if src == 'Google News':
+                 url = (f'https://news.google.com/rss/search?q={q}'
+                        '&hl=en-US&gl=US&ceid=US:en')
+             else:
+                 url = (f'https://www.bing.com/news/search?q={q}&format=rss')
+             entries, err = _fetch_feed(url)
+             if err:
+                 st.warning(f'{src} unreachable ({err}) - try the other '
+                            'source above; if both fail, your network blocks '
+                            'outbound RSS and this tab needs a proxy/VPN')
+             elif not entries:
+                 st.warning(f'{src} returned no results for this query - '
+                            'try the other source above')
+             for e in entries[:n_items]:
+                 ts = getattr(e, 'published', '')[:16]
+                 st.markdown(f'- [{e.title}]({e.link})  \n'
+                             f'  <span style="color:#888;font-size:0.8em">'
+                             f'{ts}</span>', unsafe_allow_html=True)
      except ImportError:
          st.warning('pip install feedparser for the news tab')
      st.markdown('''
